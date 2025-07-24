@@ -880,49 +880,7 @@ def main():
             st.subheader("📈 Trend Analysis")
             
             # Create tabs for different visualizations
-            st.markdown("""
-            <style>
-                /* Style all tab labels */
-                .stTabs [data-baseweb="tab-list"] {
-                    gap: 12px;
-                }
-                
-                .stTabs [data-baseweb="tab-list"] button {
-                    height: 25px;
-                    padding-left: 10px;
-                    padding-right: 10px;
-                }
-                
-                /* Inactive tabs - VIOLET */
-                .stTabs [data-baseweb="tab-list"] button p {
-                    color: #8B00FF;  /* Violet for inactive tabs */
-                    font-size: 18px;
-                }
-                
-                /* Active tab - RED */
-                .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] p {
-                    color: #FF0000;  /* Red for active tab */
-                    font-weight: bold;
-                }
-                
-                /* Hover effect */
-                .stTabs [data-baseweb="tab-list"] button:hover p {
-                    color: #FF0000;
-                    transition: color 0.3s;
-                }
-                
-                /* Tab underline/highlight - RED */
-                .stTabs [data-baseweb="tab-highlight"] {
-                    background-color: #FF0000;
-                    height: 2px;
-                }
-                
-                /* Tab panels background (optional) */
-                .stTabs [data-baseweb="tab-panel"] {
-                    padding-top: 10px;
-                }
-            </style>
-            """, unsafe_allow_html=True)
+            
             tab1, tab2 = st.tabs(["📊 Variance Trends", "📈 Summary Analytics"])
             with tab1:
                 if selected_variance_column != "None":
