@@ -884,13 +884,13 @@ def main():
             <style>
                 /* Style all tab labels */
                 .stTabs [data-baseweb="tab-list"] {
-                    gap: 24px;
+                    gap: 12px;
                 }
                 
                 .stTabs [data-baseweb="tab-list"] button {
-                    height: 50px;
-                    padding-left: 20px;
-                    padding-right: 20px;
+                    height: 25px;
+                    padding-left: 10px;
+                    padding-right: 10px;
                 }
                 
                 /* Inactive tabs - VIOLET */
@@ -914,12 +914,12 @@ def main():
                 /* Tab underline/highlight - RED */
                 .stTabs [data-baseweb="tab-highlight"] {
                     background-color: #FF0000;
-                    height: 3px;
+                    height: 2px;
                 }
                 
                 /* Tab panels background (optional) */
                 .stTabs [data-baseweb="tab-panel"] {
-                    padding-top: 20px;
+                    padding-top: 10px;
                 }
             </style>
             """, unsafe_allow_html=True)
