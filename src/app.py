@@ -839,7 +839,7 @@ def main():
                                                                                                                         selected_shape,\
                                                                                                                         selected_color,\
                                                                                                                         selected_bucket)
-            MOM_Variance,MOM_Percent_Change,MOM_QoQ_Percent_Change = get_summary_metrics(filter_data,selected_shape,\
+            MOM_Variance,MOM_Percent_Change,MOM_QoQ_Percent_Change = get_summary_metrics(filter_data,selected_month,selected_shape,\
                                                                                         selected_color,\
                                                                                         selected_bucket,\
                                                                                         selected_variance_column)
