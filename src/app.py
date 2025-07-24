@@ -383,15 +383,26 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
         return [filter_data,int(max_buying_price),int(current_avg_cost), gap_analysis_op]
     except:
         return [pd.DataFrame(columns=master_df.columns.tolist()),f"There is {filter_data.shape[0]} rows after filter",f"There is {filter_data.shape[0]} rows after filter",gap_analysis_op]
-def get_summary_metrics(filter_data,FILTER_SHAPE,FILTER_COLOR,FILTER_BUCKET,FILTER_MONTHLY_VAR_COL):
+def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTER_COLOR,FILTER_BUCKET,FILTER_MONTHLY_VAR_COL):
     master_df = load_data('kunmings.pkl')
     _filter_ = master_df[(master_df['Shape key'] == FILTER_SHAPE) &\
+                                        (master_df['Color Key'] == FILTER_COLOR) &\
+                                        (master_df['Buckets'] == FILTER_BUCKET)]
+    Prev_Month_Name = None
+    for Month_Name, Month_Num in month_map.items():
+        prev_month_num = month_map[Filter_Month]-1
+        if prev_month_num == Month_Num:
+            Prev_Month_Name = Month_Name
+    
+    Prev_filter_data=master_df[(master_df['Month'] == Prev_Month_Name) & \
+                                      (master_df['Year'] == FILTE_YEAR) & \
+                                        (master_df['Shape key'] == FILTER_SHAPE) &\
                                         (master_df['Color Key'] == FILTER_COLOR) &\
                                         (master_df['Buckets'] == FILTER_BUCKET)]
     try:
         if FILTER_MONTHLY_VAR_COL == 'Current Average Cost':
             FILTER_MONTHLY_VAR_COL='Buying Price Avg'
-            avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
+            avg_value = Prev_filter_data[FILTER_MONTHLY_VAR_COL].mean()
             MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
             var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
             MOM_Percent_Change = var_analysis[(var_analysis['Month'] == FILTER_MONTH) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
