@@ -383,7 +383,7 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
         return [filter_data,int(max_buying_price),int(current_avg_cost), gap_analysis_op]
     except:
         return [pd.DataFrame(columns=master_df.columns.tolist()),f"There is {filter_data.shape[0]} rows after filter",f"There is {filter_data.shape[0]} rows after filter",gap_analysis_op]
-def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTER_COLOR,FILTER_BUCKET,FILTER_MONTHLY_VAR_COL):
+def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_COLOR,FILTER_BUCKET,FILTER_MONTHLY_VAR_COL):
     master_df = load_data('kunmings.pkl')
     _filter_ = master_df[(master_df['Shape key'] == FILTER_SHAPE) &\
                                         (master_df['Color Key'] == FILTER_COLOR) &\
@@ -839,7 +839,7 @@ def main():
                                                                                                                         selected_shape,\
                                                                                                                         selected_color,\
                                                                                                                         selected_bucket)
-            MOM_Variance,MOM_Percent_Change,MOM_QoQ_Percent_Change = get_summary_metrics(filter_data,selected_month,selected_shape,\
+            MOM_Variance,MOM_Percent_Change,MOM_QoQ_Percent_Change = get_summary_metrics(filter_data,selected_month,selected_year,selected_shape,\
                                                                                         selected_color,\
                                                                                         selected_bucket,\
                                                                                         selected_variance_column)
