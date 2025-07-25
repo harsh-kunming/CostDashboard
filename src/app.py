@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from datetime import datetime
 from io import BytesIO
 import streamlit as st
@@ -8,6 +8,80 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from utility import *
+import json
+import os
+from pathlib import Path
+
+# File history management functions
+def get_history_file_path():
+    """Get the path for the history JSON file"""
+    history_dir = Path("history")
+    history_dir.mkdir(exist_ok=True)
+    return history_dir / "upload_history.json"
+
+def load_upload_history() -> List[Dict]:
+    """Load upload history from JSON file"""
+    history_file = get_history_file_path()
+    if history_file.exists():
+        try:
+            with open(history_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            st.warning(f"Error loading history: {e}")
+            return []
+    return []
+
+def save_upload_history(history: List[Dict]):
+    """Save upload history to JSON file"""
+    history_file = get_history_file_path()
+    try:
+        with open(history_file, 'w') as f:
+            json.dump(history, f, indent=2)
+    except Exception as e:
+        st.error(f"Error saving history: {e}")
+
+def add_to_upload_history(filename: str, file_size: int = None):
+    """Add a new file to upload history, maintaining max 10 entries"""
+    history = load_upload_history()
+    
+    # Create new entry
+    new_entry = {
+        "filename": filename,
+        "upload_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "file_size": file_size,
+        "status": "Processed"
+    }
+    
+    # Add to beginning of list
+    history.insert(0, new_entry)
+    
+    # Keep only last 10 entries
+    history = history[:10]
+    
+    # Save updated history
+    save_upload_history(history)
+    
+    return history
+
+def display_upload_history():
+    """Display the upload history in the sidebar"""
+    history = load_upload_history()
+    
+    if history:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("📁 Recent Upload History")
+        st.sidebar.markdown("*Last 10 uploaded files*")
+        
+        for idx, entry in enumerate(history, 1):
+            with st.sidebar.expander(f"{idx}. {entry['filename']}", expanded=False):
+                st.write(f"**Uploaded:** {entry['upload_time']}")
+                if entry.get('file_size'):
+                    size_mb = entry['file_size'] / (1024 * 1024)
+                    st.write(f"**Size:** {size_mb:.2f} MB")
+                st.write(f"**Status:** {entry['status']}")
+    else:
+        st.sidebar.markdown("---")
+        st.sidebar.info("No upload history available")
 
 def load_data(file):
     # Handle different input types
@@ -608,7 +682,7 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         
         # Update layout
         fig.update_layout(
-            title=f"Trend Analysis - {selected_shape} | {selected_color} | {selected_bucket}",
+            title=dict(text=f"Trend Analysis - {selected_shape} | {selected_color} | {selected_bucket}",font=dict(color='blue', size=20)),
             height=600,
             showlegend=True,
             legend=dict(
@@ -621,9 +695,6 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
-        
-        # Update subplot title colors to orange
-        fig.update_annotations(font=dict(color='orange', size=16))
         
         # Update x-axis
         fig.update_xaxes(
@@ -663,6 +734,7 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
             showarrow=False, font=dict(size=16)
         )
         return fig
+
 def create_summary_charts(master_df, selected_shape, selected_color, selected_bucket):
     """
     Create summary charts showing overall trends across all months/years
@@ -776,15 +848,12 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
     
     # Update layout
     fig.update_layout(
-        title=f"Summary Analytics - {selected_shape} | {selected_color} | {selected_bucket}",
+        title=dict(text=f"Summary Analytics - {selected_shape} | {selected_color} | {selected_bucket}",font=dict(color='blue', size=20)),
         height=500,
         showlegend=False,
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
-    
-    # Update subplot title colors to orange
-    fig.update_annotations(font=dict(color='orange', size=16))
     
     # Update all x-axes
     for i in range(1, 3):
@@ -803,6 +872,9 @@ def main():
         st.session_state.data_processed = False
     if 'master_df' not in st.session_state:
         st.session_state.master_df = pd.DataFrame()
+    if 'upload_history' not in st.session_state:
+        st.session_state.upload_history = load_upload_history()
+        
     # Sidebar for controls
     st.sidebar.header("Controls")
     # File upload
@@ -811,12 +883,49 @@ def main():
         type=['xlsx', 'xls'],
         help="Upload an Excel file with multiple sheets"
     )
+    
+    # Display upload history
+    display_upload_history()
+    
     # Main content area
     if uploaded_file is not None and not st.session_state.data_processed:
         with st.spinner("Processing Excel file..."):
-            st.subheader("🗄️ Master Database")
-            st.session_state.master_df  = get_final_data(uploaded_file)
-            st.session_state.data_processed = True
+            try:
+                # Get file size
+                file_size = uploaded_file.size if hasattr(uploaded_file, 'size') else None
+                
+                # Process the file
+                st.subheader("🗄️ Master Database")
+                st.session_state.master_df = get_final_data(uploaded_file)
+                st.session_state.data_processed = True
+                
+                # Add to upload history after successful processing
+                st.session_state.upload_history = add_to_upload_history(
+                    filename=uploaded_file.name,
+                    file_size=file_size
+                )
+                
+                # Show success message
+                st.success(f"✅ Successfully processed: {uploaded_file.name}")
+                
+                # Force sidebar refresh to show updated history
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error processing file: {str(e)}")
+                # Still add to history but mark as failed
+                history = load_upload_history()
+                new_entry = {
+                    "filename": uploaded_file.name,
+                    "upload_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "file_size": uploaded_file.size if hasattr(uploaded_file, 'size') else None,
+                    "status": "Failed"
+                }
+                history.insert(0, new_entry)
+                history = history[:10]
+                save_upload_history(history)
+                st.session_state.upload_history = history
+                
     if not st.session_state.master_df.empty or uploaded_file is not None:
         Month,Year,Shape,Color,Bucket,Variance_Column = st.columns(6)
         with Month:
@@ -1056,6 +1165,13 @@ def main():
     if st.sidebar.button("Reset Data Processing"):
         st.session_state.data_processed = False
         st.session_state.master_df = pd.DataFrame()
+        st.rerun()
+    
+    # Clear history button
+    if st.sidebar.button("Clear Upload History"):
+        save_upload_history([])
+        st.session_state.upload_history = []
+        st.success("Upload history cleared!")
         st.rerun()
     
 if __name__ == "__main__":
