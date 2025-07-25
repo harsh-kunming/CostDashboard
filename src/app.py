@@ -403,7 +403,7 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
         if FILTER_MONTHLY_VAR_COL == 'Current Average Cost':
             FILTER_MONTHLY_VAR_COL='Buying Price Avg'
             avg_value = Prev_filter_data[FILTER_MONTHLY_VAR_COL].mean()
-            MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )* 100
+            MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value ))* 100
             var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
             MOM_Percent_Change = var_analysis[(var_analysis['Month'] == FILTER_MONTH) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
             MOM_QoQ_Percent_Change = var_analysis[(var_analysis['Month'] == FILTER_MONTH) & (var_analysis['Year'] == FILTE_YEAR)]['qaurter_change'].values.tolist()[0]
