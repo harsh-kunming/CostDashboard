@@ -226,8 +226,8 @@ def populate_selling_prices(df,MONTHLY_STOCK_DATA):
     df : Buying Max Prices Sheet 
     MONTHLY_STOCK_DATA : Monthly Stock Data Sheet
     """
-    columns=list(concatenate_first_two_rows(df.iloc[0:2,2:]).values())
-    columns = ['Months','Buckets'] + columns
+    columns=list(concatenate_first_two_rows(df.iloc[0:2,1:]).values())
+    columns = ['Buckets'] + columns
     df.columns = columns
     df=df.iloc[2:,:]
     df.reset_index(drop=True,inplace=True)
