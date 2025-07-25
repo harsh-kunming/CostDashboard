@@ -422,9 +422,9 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
                 MOM_Percent_Change = 0
             if MOM_QoQ_Percent_Change == np.inf:
                 MOM_QoQ_Percent_Change = 0
-            return [int(MOM_Variance), MOM_Percent_Change, MOM_QoQ_Percent_Change]
+            return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
     except:
-        return [0,0,0]
+        return [1,1,1]
         
     
 def get_gap_summary_table(master_df, selected_month, selected_year, selected_shape, selected_color, selected_bucket):
