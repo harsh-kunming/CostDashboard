@@ -488,7 +488,7 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
                 MOM_Percent_Change = 0
             if MOM_QoQ_Percent_Change == np.inf or pd.isna(MOM_QoQ_Percent_Change):
                 MOM_QoQ_Percent_Change = 0
-            if pd.isna(MOM_Variance):
+            if pd.isna(MOM_Variance) or MOM_Variance == np.inf :
                 MOM_Variance = 0
             return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
         else:
