@@ -608,7 +608,7 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         
         # Update layout
         fig.update_layout(
-            title=f"Trend Analysis - {selected_shape} | {selected_color} | {selected_bucket}",
+            title=dict(text=f"Trend Analysis - {selected_shape} | {selected_color} | {selected_bucket}",font=dict(color='blue', size=20))
             height=600,
             showlegend=True,
             legend=dict(
@@ -774,7 +774,7 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
     
     # Update layout
     fig.update_layout(
-        title=f"Summary Analytics - {selected_shape} | {selected_color} | {selected_bucket}",
+        title=dict(text=f"Summary Analytics - {selected_shape} | {selected_color} | {selected_bucket}",font=dict(color='blue', size=20))
         height=500,
         showlegend=False,
         plot_bgcolor='white',
