@@ -697,7 +697,7 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         )
         
         # Update subplot title colors to orange
-        fig.update_annotations(font=dict(color='orange', size=16))
+        fig.update_annotations(font=dict(color='black', size=16))
         
         # Update x-axis
         fig.update_xaxes(
@@ -859,7 +859,7 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
     )
     
     # Update subplot title colors to orange
-    fig.update_annotations(font=dict(color='orange', size=16))
+    fig.update_annotations(font=dict(color='black', size=16))
     
     # Update all x-axes
     for i in range(1, 3):
