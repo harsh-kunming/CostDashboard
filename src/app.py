@@ -478,14 +478,18 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
         if FILTER_MONTHLY_VAR_COL == 'Current Average Cost':
             FILTER_MONTHLY_VAR_COL='Buying Price Avg'
             avg_value = Prev_filter_data[FILTER_MONTHLY_VAR_COL].mean()
-            MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value ))* 100
+            current_avg_cost = (sum(filter_data['Avg Cost Total'])/(filter_data['Weight'].sum() if filter_data['Weight'].sum() != 0 else 1))*.9
+            prev_current_avg_cost = (sum(Prev_filter_data['Avg Cost Total'])/(Prev_filter_data['Weight'].sum() if Prev_filter_data['Weight'].sum() != 0 else 1))*.9
+            MOM_Variance = ((current_avg_cost-prev_current_avg_cost)/prev_current_avg_cost)* 100
             var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
             MOM_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
             MOM_QoQ_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['qaurter_change'].values.tolist()[0]
-            if MOM_Percent_Change == np.inf:
+            if MOM_Percent_Change == np.inf or pd.isna(MOM_Percent_Change) :
                 MOM_Percent_Change = 0
-            if MOM_QoQ_Percent_Change == np.inf:
+            if MOM_QoQ_Percent_Change == np.inf or pd.isna(MOM_QoQ_Percent_Change):
                 MOM_QoQ_Percent_Change = 0
+            if pd.isna(MOM_Variance):
+                MOM_Variance = 0
             return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
         else:
             avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
