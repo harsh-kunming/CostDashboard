@@ -608,7 +608,7 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         
         # Update layout
         fig.update_layout(
-            title=dict(text=f"Trend Analysis - {selected_shape} | {selected_color} | {selected_bucket}",font=dict(color='blue', size=20)),
+            title=f"Trend Analysis - {selected_shape} | {selected_color} | {selected_bucket}",
             height=600,
             showlegend=True,
             legend=dict(
@@ -621,6 +621,9 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
+        
+        # Update subplot title colors to orange
+        fig.update_annotations(font=dict(color='orange', size=16))
         
         # Update x-axis
         fig.update_xaxes(
@@ -660,7 +663,6 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
             showarrow=False, font=dict(size=16)
         )
         return fig
-
 def create_summary_charts(master_df, selected_shape, selected_color, selected_bucket):
     """
     Create summary charts showing overall trends across all months/years
@@ -774,12 +776,15 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
     
     # Update layout
     fig.update_layout(
-        title=dict(text=f"Summary Analytics - {selected_shape} | {selected_color} | {selected_bucket}",font=dict(color='blue', size=20)),
+        title=f"Summary Analytics - {selected_shape} | {selected_color} | {selected_bucket}",
         height=500,
         showlegend=False,
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
+    
+    # Update subplot title colors to orange
+    fig.update_annotations(font=dict(color='orange', size=16))
     
     # Update all x-axes
     for i in range(1, 3):
