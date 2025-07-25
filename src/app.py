@@ -348,7 +348,7 @@ def poplutate_monthly_stock_sheet(file):
     df_buying = df['Buying Max Prices']
     df_min_qty = df['MIN Data']
     df_max_qty = df['MAX Data']
-    df_min_sp = df['Min Selling Price
+    df_min_sp = df['Min Selling Price']
     if df_stock.empty or df_buying.empty or df_min_qty.empty or df_max_qty.empty:
         raise ValueError("One or more dataframes are empty. Please check the input files.")
     df_stock = create_date_join(df_stock)
