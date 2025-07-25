@@ -411,7 +411,7 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
                 MOM_Percent_Change = 0
             if MOM_QoQ_Percent_Change == np.inf:
                 MOM_QoQ_Percent_Change = 0
-            return [int(MOM_Variance), MOM_Percent_Change, MOM_QoQ_Percent_Change]
+            return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
         else:
             avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
             MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
