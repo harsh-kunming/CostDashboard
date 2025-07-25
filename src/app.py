@@ -248,7 +248,7 @@ def populate_selling_prices(df,MONTHLY_STOCK_DATA):
                 value = 0
         _SELLING_PRICE_.append(value)
     MONTHLY_STOCK_DATA['Min Selling Price'] = _SELLING_PRICE_
-    MONTHLY_STOCK_DATA['Min Selling Price']=MONTHLY_STOCK_DATA['Max Buying Price'].map(lambda x:x[0] if isinstance(x, list) and len(x) > 0 else 0)
+    MONTHLY_STOCK_DATA['Min Selling Price']=MONTHLY_STOCK_DATA['Min Selling Price'].map(lambda x: x[0] if (isinstance(x,list) and len(x)>0) else 0)
     MONTHLY_STOCK_DATA['Min Selling Price'] = MONTHLY_STOCK_DATA['Max Buying Price'] * MONTHLY_STOCK_DATA['Min Selling Price'] 
     return MONTHLY_STOCK_DATA
 def populate_buying_prices(df,MONTHLY_STOCK_DATA):
