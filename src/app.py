@@ -425,7 +425,7 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
                 MOM_QoQ_Percent_Change = 0
             return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
     except:
-        return [1,1,1]
+        return [0,0,0]
         
     
 def get_gap_summary_table(master_df, selected_month, selected_year, selected_shape, selected_color, selected_bucket):
@@ -881,7 +881,49 @@ def main():
             st.subheader("📈 Trend Analysis")
             
             # Create tabs for different visualizations
-            
+            st.markdown("""
+            <style>
+                /* Style all tab labels */
+                .stTabs [data-baseweb="tab-list"] {
+                    gap: 24px;
+                }
+                
+                .stTabs [data-baseweb="tab-list"] button {
+                    height: 50px;
+                    padding-left: 20px;
+                    padding-right: 20px;
+                }
+                
+                /* Inactive tabs - VIOLET */
+                .stTabs [data-baseweb="tab-list"] button p {
+                    color: #8B00FF;  /* Violet for inactive tabs */
+                    font-size: 18px;
+                }
+                
+                /* Active tab - RED */
+                .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] p {
+                    color: #FF0000;  /* Red for active tab */
+                    font-weight: bold;
+                }
+                
+                /* Hover effect */
+                .stTabs [data-baseweb="tab-list"] button:hover p {
+                    color: #FF0000;
+                    transition: color 0.3s;
+                }
+                
+                /* Tab underline/highlight - RED */
+                .stTabs [data-baseweb="tab-highlight"] {
+                    background-color: #FF0000;
+                    height: 3px;
+                }
+                
+                /* Tab panels background (optional) */
+                .stTabs [data-baseweb="tab-panel"] {
+                    padding-top: 20px;
+                }
+            </style>
+            """, unsafe_allow_html=True)
             tab1, tab2 = st.tabs(["📊 Variance Trends", "📈 Summary Analytics"])
             with tab1:
                 if selected_variance_column != "None":
