@@ -531,8 +531,8 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                         ]
                         
                         if not filtered_data.empty:
-                            max_qty = filtered_data['Max Qty'].max()
-                            min_qty = filtered_data['Min Qty'].min()
+                            max_qty = int(filtered_data['Max Qty'].max())
+                            min_qty = int(filtered_data['Min Qty'].min())
                             stock_in_hand = filtered_data.shape[0]
                             gap_value = gap_analysis(max_qty, min_qty, stock_in_hand)
                             
@@ -545,7 +545,7 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                 'Max Qty': max_qty,
                                 'Min Qty': min_qty,
                                 'Stock in Hand': stock_in_hand,
-                                'GAP Value': gap_value,
+                                'GAP Value': int(gap_value),
                                 'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate'
                             })
     
