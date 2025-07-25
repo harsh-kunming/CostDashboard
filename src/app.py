@@ -221,7 +221,36 @@ def populate_min_qty(df,MONTHLY_STOCK_DATA):
     MONTHLY_STOCK_DATA['Min Qty'] = _MIN_QTY_
     MONTHLY_STOCK_DATA['Min Qty']=MONTHLY_STOCK_DATA['Min Qty'].map(lambda x:x[0] if isinstance(x, list) and len(x) > 0 else 0)
     return MONTHLY_STOCK_DATA
-
+def populate_selling_prices(df,MONTHLY_STOCK_DATA):
+    """
+    df : Buying Max Prices Sheet 
+    MONTHLY_STOCK_DATA : Monthly Stock Data Sheet
+    """
+    columns=list(concatenate_first_two_rows(df.iloc[0:2,2:]).values())
+    columns = ['Buckets'] + columns
+    df.columns = columns
+    df=df.iloc[2:,:]
+    df.reset_index(drop=True,inplace=True)
+    _SELLING_PRICE_ = []
+    MONTHLY_STOCK_DATA['Min Selling Price'] = None
+    for indx, row in MONTHLY_STOCK_DATA.iterrows():
+        join = row['Join']
+        Shape = row['Shape key']
+        Color = row['Color Key']
+        Bucket = row['Buckets']
+        if pd.isna(Color):
+            value = None
+        else:
+            col_name = f"{Shape}_{Color}"
+            if col_name in df.columns.tolist():
+                value = df[(df['Buckets'] == Bucket)][col_name].values.tolist()
+            else:
+                value = 0
+        _BUYING_PRICE_.append(value)
+    MONTHLY_STOCK_DATA['Min Selling Price'] = _BUYING_PRICE_
+    MONTHLY_STOCK_DATA['Min Selling Price']=MONTHLY_STOCK_DATA['Max Buying Price'].map(lambda x:x[0] if isinstance(x, list) and len(x) > 0 else 0)
+    MONTHLY_STOCK_DATA['Min Selling Price'] = MONTHLY_STOCK_DATA['Max Buying Price'] * MONTHLY_STOCK_DATA['Min Selling Price'] 
+    return MONTHLY_STOCK_DATA
 def populate_buying_prices(df,MONTHLY_STOCK_DATA):
     """
     df : Buying Max Prices Sheet 
@@ -319,6 +348,7 @@ def poplutate_monthly_stock_sheet(file):
     df_buying = df['Buying Max Prices']
     df_min_qty = df['MIN Data']
     df_max_qty = df['MAX Data']
+    df_min_sp = df['Min Selling Price
     if df_stock.empty or df_buying.empty or df_min_qty.empty or df_max_qty.empty:
         raise ValueError("One or more dataframes are empty. Please check the input files.")
     df_stock = create_date_join(df_stock)
@@ -331,6 +361,7 @@ def poplutate_monthly_stock_sheet(file):
     df_stock = populate_min_qty(df_min_qty, df_stock)
     df_stock = populate_buying_prices(df_buying, df_stock)
     df_stock = calculate_buying_price_avg(df_stock)
+    df_stock = populate_selling_prices(df_min_sp,df_stock)
     return df_stock
 def calculate_qoq_variance_percentage(current_quarter_price, previous_quarter_price):
     """
@@ -445,6 +476,7 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
     try:
         max_buying_price = filter_data['Max Buying Price'].max()
         current_avg_cost = (sum(filter_data['Avg Cost Total'])/(filter_data['Weight'].sum() if filter_data['Weight'].sum() != 0 else 1))*.9
+        min_selling_price = filter_data['Min Selling Price'].min()
         # avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
         # MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
         # var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
@@ -454,9 +486,9 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
         #     MOM_Percent_Change = 0
         # if MOM_QoQ_Percent_Change == np.inf:
         #     MOM_QoQ_Percent_Change = 0
-        return [filter_data,int(max_buying_price),int(current_avg_cost), gap_analysis_op]
+        return [filter_data,int(max_buying_price),int(current_avg_cost), gap_analysis_op,min_selling_price]
     except:
-        return [pd.DataFrame(columns=master_df.columns.tolist()),f"There is {filter_data.shape[0]} rows after filter",f"There is {filter_data.shape[0]} rows after filter",gap_analysis_op]
+        return [pd.DataFrame(columns=master_df.columns.tolist()),f"There is {filter_data.shape[0]} rows after filter",f"There is {filter_data.shape[0]} rows after filter",gap_analysis_op,0]
 def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_COLOR,FILTER_BUCKET,FILTER_MONTHLY_VAR_COL):
     FILTE_YEAR = int(FILTE_YEAR)
     master_df = load_data('kunmings.pkl')
@@ -491,17 +523,33 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
             if pd.isna(MOM_Variance) or MOM_Variance == np.inf :
                 MOM_Variance = 0
             return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
-        else:
+        elif FILTER_MONTHLY_VAR_COL == 'Max Buying Price':
             avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
             MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
             var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
             MOM_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
             MOM_QoQ_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['qaurter_change'].values.tolist()[0]
-            if MOM_Percent_Change == np.inf:
+            if MOM_Percent_Change == np.inf or pd.isna(MOM_Percent_Change) :
                 MOM_Percent_Change = 0
-            if MOM_QoQ_Percent_Change == np.inf:
+            if MOM_QoQ_Percent_Change == np.inf or pd.isna(MOM_QoQ_Percent_Change):
                 MOM_QoQ_Percent_Change = 0
+            if pd.isna(MOM_Variance) or MOM_Variance == np.inf :
+                MOM_Variance = 0
             return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
+        elif FILTER_MONTHLY_VAR_COL == 'Min Selling Price':
+            avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
+            MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
+            var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
+            MOM_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
+            MOM_QoQ_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['qaurter_change'].values.tolist()[0]
+            if MOM_Percent_Change == np.inf or pd.isna(MOM_Percent_Change) :
+                MOM_Percent_Change = 0
+            if MOM_QoQ_Percent_Change == np.inf or pd.isna(MOM_QoQ_Percent_Change):
+                MOM_QoQ_Percent_Change = 0
+            if pd.isna(MOM_Variance) or MOM_Variance == np.inf :
+                MOM_Variance = 0
+            return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
+            
     except:
         return [0,0,0]
         
@@ -954,12 +1002,12 @@ def main():
             buckets = ["None"]+list(stock_bucket.keys())
             selected_bucket = st.selectbox("Filter by Bucket", buckets)
         with Variance_Column:
-            variance_columns = ["None"]+['Current Average Cost','Max Buying Price']
+            variance_columns = ["None"]+['Current Average Cost','Max Buying Price','Min Selling Price']
             selected_variance_column = st.selectbox("Select Variance Column", variance_columns)
         # Apply filters
         filtered_df = st.session_state.master_df.copy()
         if ((selected_month != "None") & (selected_year != "None") & (selected_shape != "None") & (selected_color != "None") & (selected_bucket != "None")) :
-            filter_data,max_buying_price,current_avg_cost,gap_output = get_filtered_data(selected_month,\
+            filter_data,max_buying_price,current_avg_cost,gap_output,min_selling_price = get_filtered_data(selected_month,\
                                                                                                                         selected_year,\
                                                                                                                         selected_shape,\
                                                                                                                         selected_color,\
@@ -970,12 +1018,14 @@ def main():
                                                                                         selected_variance_column)
             # Display summary metrics
             st.subheader("📊 Summary Metrics")
-            mbp,cac,mom_var,mom_perc,qoq_perc,GAP = st.columns(6)
+            mbp,cac,mom_var,mom_perc,qoq_perc,GAP,msp = st.columns(7)
             if type(max_buying_price)!= str:
                 with GAP:
                     st.metric("Gap Analysis",value=gap_output,help=f"{'Excess' if gap_output>0 else 'Need' if gap_output < 0 else 'Enough'}")
                 with mbp:
                     st.metric("Max Buying Price", f"${max_buying_price:,.2f}")
+                with msp:
+                    st.metric("Min Selling Price",f"${min_selling_price:,.2f}")
                 with cac:
                     st.metric("Current Avg Cost", f"${current_avg_cost:,.2f}",help="90% of Sum of (Average Cost Total) / Weight ")
                 with mom_var:
