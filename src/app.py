@@ -362,6 +362,7 @@ def poplutate_monthly_stock_sheet(file):
     df_stock = populate_buying_prices(df_buying, df_stock)
     df_stock = calculate_buying_price_avg(df_stock)
     df_stock = populate_selling_prices(df_min_sp,df_stock)
+    df_stock.fillna(0,inplace=True)
     return df_stock
 def calculate_qoq_variance_percentage(current_quarter_price, previous_quarter_price):
     """
