@@ -610,7 +610,7 @@ def get_final_data(file,PARENT_DF = 'kunmings.pkl'):
     df = poplutate_monthly_stock_sheet(file)
     parent_df = load_data(PARENT_DF)
     master_df = pd.concat([df, parent_df], ignore_index=True,axis=0)
-    master_df = master_df.drop_duplicates(subset='Product Id')
+    # master_df = master_df.drop_duplicates(subset='Product Id')
     save_data(master_df)
     return master_df
 def sort_months(months):
