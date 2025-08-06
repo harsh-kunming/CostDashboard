@@ -83,6 +83,22 @@ def display_upload_history():
         st.sidebar.markdown("---")
         st.sidebar.info("No upload history available")
 
+def check_master_dataset_exists():
+    """Check if the master dataset (kunmings.pkl) exists"""
+    master_file_path = Path("src/kunmings.pkl")
+    return master_file_path.exists()
+
+def load_master_dataset():
+    """Load the master dataset if it exists"""
+    try:
+        if check_master_dataset_exists():
+            return load_data('kunmings.pkl')
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading master dataset: {str(e)}")
+        return pd.DataFrame()
+
 def load_data(file):
     # Handle different input types
     if isinstance(file, str):
@@ -125,7 +141,10 @@ def load_data(file):
 
 
 def save_data(df):
+    # Create src directory if it doesn't exist
+    Path("src").mkdir(exist_ok=True)
     df.to_pickle('src/kunmings.pkl')
+    
 def create_color_key(df,color_map):
     df['Color Key'] = df.Color.map(lambda x: color_map[x] if x in color_map else '')
     return df
@@ -928,6 +947,7 @@ def main():
     st.set_page_config(page_title="Yellow Diamond Dashboard", layout="wide")
     st.title("Yellow Diamond Dashboard")
     st.markdown("Upload Excel files to process multiple sheets and filter data.")
+    
     # Initialize session state
     if 'data_processed' not in st.session_state:
         st.session_state.data_processed = False
@@ -935,14 +955,31 @@ def main():
         st.session_state.master_df = pd.DataFrame()
     if 'upload_history' not in st.session_state:
         st.session_state.upload_history = load_upload_history()
+    
+    # Check and load master dataset if exists and not already loaded
+    if st.session_state.master_df.empty and check_master_dataset_exists():
+        with st.spinner("Loading master database..."):
+            try:
+                st.session_state.master_df = load_master_dataset()
+                if not st.session_state.master_df.empty:
+                    st.success("✅ Master database loaded successfully!")
+            except Exception as e:
+                st.error(f"Error loading master database: {str(e)}")
         
     # Sidebar for controls
     st.sidebar.header("Controls")
+    
+    # Display master database status
+    if not st.session_state.master_df.empty:
+        st.sidebar.success(f"Master DB: {len(st.session_state.master_df)} records")
+    else:
+        st.sidebar.warning("No master database found")
+    
     # File upload
     uploaded_file = st.sidebar.file_uploader(
         "Upload Excel File",
         type=['xlsx', 'xls'],
-        help="Upload an Excel file with multiple sheets"
+        help="Upload an Excel file with multiple sheets to add to master database"
     )
     
     # Display upload history
@@ -956,7 +993,7 @@ def main():
                 file_size = uploaded_file.size if hasattr(uploaded_file, 'size') else None
                 
                 # Process the file
-                st.subheader("🗄️ Master Database")
+                st.subheader("🗄️ Updating Master Database")
                 st.session_state.master_df = get_final_data(uploaded_file)
                 st.session_state.data_processed = True
                 
@@ -968,6 +1005,7 @@ def main():
                 
                 # Show success message
                 st.success(f"✅ Successfully processed: {uploaded_file.name}")
+                st.info(f"Master database now contains {len(st.session_state.master_df)} records")
                 
                 # Force sidebar refresh to show updated history
                 st.rerun()
@@ -986,44 +1024,10 @@ def main():
                 history = history[:10]
                 save_upload_history(history)
                 st.session_state.upload_history = history
-    elif not st.session_state.data_processed:
-        try:
-            # Get file size
-            # file_size = uploaded_file.size if hasattr(uploaded_file, 'size') else None
-            
-            # Process the file
-            st.subheader("🗄️ Master Database")
-            st.session_state.master_df = load_data('kunmings.pkl')
-            st.session_state.data_processed = True
-            
-            # Add to upload history after successful processing
-            # st.session_state.upload_history = add_to_upload_history(
-            #     filename=uploaded_file.name,
-            #     file_size=file_size
-            # )
-            
-            # Show success message
-            # st.success(f"✅ Successfully processed: {uploaded_file.name}")
-            
-            # Force sidebar refresh to show updated history
-            # st.rerun()
-            
-        except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
-            # Still add to history but mark as failed
-            # history = load_upload_history()
-            # new_entry = {
-            #     "filename": uploaded_file.name,
-            #     "upload_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            #     "file_size": uploaded_file.size if hasattr(uploaded_file, 'size') else None,
-            #     "status": "Failed"
-            # }
-            # history.insert(0, new_entry)
-            # history = history[:10]
-            # save_upload_history(history)
-            # st.session_state.upload_history = history
                 
-    if not st.session_state.master_df.empty or uploaded_file is not None:
+    # Show dashboard if master_df has data (regardless of upload)
+    if not st.session_state.master_df.empty:
+        # Create filter columns
         Month,Year,Shape,Color,Bucket,Variance_Column = st.columns(6)
         with Month:
             categories = ["None"]+sort_months(list(st.session_state.master_df['Month'].unique()))
@@ -1043,6 +1047,7 @@ def main():
         with Variance_Column:
             variance_columns = ["None"]+['Current Average Cost','Max Buying Price','Min Selling Price']
             selected_variance_column = st.selectbox("Select Variance Column", variance_columns)
+        
         # Apply filters
         filtered_df = st.session_state.master_df.copy()
         if ((selected_month != "None") & (selected_year != "None") & (selected_shape != "None") & (selected_color != "None") & (selected_bucket != "None")) :
@@ -1243,13 +1248,13 @@ def main():
             st.download_button(
                 label="Download GAP Excess Summary as CSV",
                 data=gap_csv_excess,
-                file_name=f"gap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                file_name=f"gap_summary_excess_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
             st.download_button(
                 label="Download GAP Need Summary as CSV",
                 data=gap_csv_need,
-                file_name=f"gap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                file_name=f"gap_summary_need_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
         else:
@@ -1260,10 +1265,13 @@ def main():
         
     else:
         st.info("No data in master database. Upload an Excel file to get started!")
+        
     # Reset button
     if st.sidebar.button("Reset Data Processing"):
         st.session_state.data_processed = False
-        st.session_state.master_df = pd.DataFrame()
+        # Don't clear master_df if it was loaded from file
+        if uploaded_file is not None:
+            st.session_state.master_df = load_master_dataset() if check_master_dataset_exists() else pd.DataFrame()
         st.rerun()
     
     # Clear history button
