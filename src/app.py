@@ -408,11 +408,19 @@ def calculate_qoq_variance_percentage(current_quarter_price, previous_quarter_pr
         variance_percentage = 0.00001
         # raise ValueError("Previous quarter price must be positive (cannot be zero or negative)")
     
-    # Calculate variance percentage
-    if previous_quarter_price !=0:
-        variance_percentage = ((current_quarter_price - previous_quarter_price) / previous_quarter_price) * 100
-    else:
-        variance_percentage = ((current_quarter_price - previous_quarter_price) / (previous_quarter_price+current_quarter_price)) * 100
+    # Calculate variance percentage with ZeroDivisionError handling
+    try:
+        if previous_quarter_price != 0:
+            variance_percentage = ((current_quarter_price - previous_quarter_price) / previous_quarter_price) * 100
+        else:
+            total = previous_quarter_price + current_quarter_price
+            if total != 0:
+                variance_percentage = ((current_quarter_price - previous_quarter_price) / total) * 100
+            else:
+                variance_percentage = 0
+    except ZeroDivisionError:
+        variance_percentage = 0
+        
     return round(variance_percentage, 2)
 
 
@@ -487,11 +495,17 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
                                         (master_df['Buckets'] == FILTER_BUCKET)]
     try:
         max_buying_price = filter_data['Max Buying Price'].max()
-        current_avg_cost = (sum(filter_data['Avg Cost Total'])/(filter_data['Weight'].sum() if filter_data['Weight'].sum() != 0 else 1))*.9
+        # Handle ZeroDivisionError
+        weight_sum = filter_data['Weight'].sum()
+        if weight_sum != 0:
+            current_avg_cost = (sum(filter_data['Avg Cost Total'])/weight_sum) * 0.9
+        else:
+            current_avg_cost = 0
         min_selling_price = filter_data['Min Selling Price'].min()
         return [filter_data,int(max_buying_price),int(current_avg_cost), gap_analysis_op,min_selling_price]
     except:
         return [pd.DataFrame(columns=master_df.columns.tolist()),f"There is {filter_data.shape[0]} rows after filter",f"There is {filter_data.shape[0]} rows after filter",gap_analysis_op,0]
+
 def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_COLOR,FILTER_BUCKET,FILTER_MONTHLY_VAR_COL):
     FILTE_YEAR = int(FILTE_YEAR)
     master_df = load_data('kunmings.pkl')
@@ -500,14 +514,25 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
     _filter_ = master_df[(master_df['Shape key'] == FILTER_SHAPE) &\
                                         (master_df['Color Key'] == FILTER_COLOR) &\
                                         (master_df['Buckets'] == FILTER_BUCKET)]
+    
+    # Calculate previous month considering year transitions
+    current_month_num = month_map[Filter_Month]
     Prev_Month_Name = None
-    for Month_Name, Month_Num in month_map.items():
-        prev_month_num = month_map[Filter_Month]-1
-        if prev_month_num == Month_Num:
-            Prev_Month_Name = Month_Name
+    Prev_Year = FILTE_YEAR
+    
+    if current_month_num == 1:  # January
+        # Previous month is December of previous year
+        Prev_Month_Name = 'December'
+        Prev_Year = FILTE_YEAR - 1
+    else:
+        # Find the previous month in the same year
+        for Month_Name, Month_Num in month_map.items():
+            if Month_Num == current_month_num - 1:
+                Prev_Month_Name = Month_Name
+                break
     
     Prev_filter_data=master_df[(master_df['Month'] == Prev_Month_Name) & \
-                                      (master_df['Year'] == FILTE_YEAR) & \
+                                      (master_df['Year'] == Prev_Year) & \
                                         (master_df['Shape key'] == FILTER_SHAPE) &\
                                         (master_df['Color Key'] == FILTER_COLOR) &\
                                         (master_df['Buckets'] == FILTER_BUCKET)]
@@ -515,9 +540,27 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
         if FILTER_MONTHLY_VAR_COL == 'Current Average Cost':
             FILTER_MONTHLY_VAR_COL='Buying Price Avg'
             avg_value = Prev_filter_data[FILTER_MONTHLY_VAR_COL].mean()
-            current_avg_cost = (sum(filter_data['Avg Cost Total'])/(filter_data['Weight'].sum() if filter_data['Weight'].sum() != 0 else 1))*.9
-            prev_current_avg_cost = (sum(Prev_filter_data['Avg Cost Total'])/(Prev_filter_data['Weight'].sum() if Prev_filter_data['Weight'].sum() != 0 else 1))*.9
-            MOM_Variance = ((current_avg_cost-prev_current_avg_cost)/prev_current_avg_cost)* 100
+            
+            # Calculate current and previous average costs with ZeroDivisionError handling
+            weight_sum_current = filter_data['Weight'].sum()
+            weight_sum_prev = Prev_filter_data['Weight'].sum()
+            
+            if weight_sum_current != 0:
+                current_avg_cost = (sum(filter_data['Avg Cost Total'])/weight_sum_current) * 0.9
+            else:
+                current_avg_cost = 0
+                
+            if weight_sum_prev != 0:
+                prev_current_avg_cost = (sum(Prev_filter_data['Avg Cost Total'])/weight_sum_prev) * 0.9
+            else:
+                prev_current_avg_cost = 0
+            
+            # Calculate MOM Variance with ZeroDivisionError handling
+            if prev_current_avg_cost != 0:
+                MOM_Variance = ((current_avg_cost - prev_current_avg_cost) / prev_current_avg_cost) * 100
+            else:
+                MOM_Variance = 0
+                
             var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
             MOM_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
             MOM_QoQ_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['qaurter_change'].values.tolist()[0]
@@ -530,7 +573,11 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
             return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
         elif FILTER_MONTHLY_VAR_COL == 'Max Buying Price':
             avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
-            MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
+            # Handle ZeroDivisionError
+            if avg_value != 0 and filter_data.shape[0] != 0:
+                MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
+            else:
+                MOM_Variance = 0
             var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
             MOM_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
             MOM_QoQ_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['qaurter_change'].values.tolist()[0]
@@ -543,7 +590,11 @@ def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_
             return [MOM_Variance, MOM_Percent_Change, MOM_QoQ_Percent_Change]
         elif FILTER_MONTHLY_VAR_COL == 'Min Selling Price':
             avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
-            MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
+            # Handle ZeroDivisionError
+            if avg_value != 0 and filter_data.shape[0] != 0:
+                MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
+            else:
+                MOM_Variance = 0
             var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
             MOM_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
             MOM_QoQ_Percent_Change = var_analysis[(var_analysis['Month'] == Filter_Month) & (var_analysis['Year'] == FILTE_YEAR)]['qaurter_change'].values.tolist()[0]
@@ -646,7 +697,9 @@ def sort_months(months):
     sorted_months = sorted(months, key=lambda month: month_mapping.get(month, 13))
     
     return sorted_months
-def create_trend_visualization(master_df, selected_shape=None, selected_color=None, selected_bucket=None, selected_variance_column=None):
+
+def create_trend_visualization(master_df, selected_shape=None, selected_color=None, selected_bucket=None, 
+                             selected_variance_column=None, selected_month=None, selected_year=None):
     """
     Create trend line visualizations for MOM Variance and MOM QoQ Percent Change
     
@@ -656,6 +709,8 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         selected_color: Selected color filter  
         selected_bucket: Selected bucket filter
         selected_variance_column: Column to calculate variance for
+        selected_month: Selected month filter (for highlighting)
+        selected_year: Selected year filter (for highlighting)
     
     Returns:
         plotly figure object
@@ -708,6 +763,22 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         var_analysis['Date'] = pd.to_datetime(var_analysis['Date'], format='%d-%m-%Y')
         var_analysis = var_analysis.sort_values('Date')
         
+        # Filter data up to selected month/year if specified
+        if selected_month is not None and selected_month != "None" and selected_year is not None and selected_year != "None":
+            selected_year_int = int(selected_year)
+            selected_month_num = month_map.get(selected_month, 0)
+            
+            # Create a cutoff date
+            cutoff_date = pd.to_datetime(f"{selected_year_int}-{selected_month_num:02d}-01")
+            var_analysis_filtered = var_analysis[var_analysis['Date'] <= cutoff_date].copy()
+            
+            # Add highlight column for selected month
+            var_analysis_filtered['is_selected'] = ((var_analysis_filtered['Month'] == selected_month) & 
+                                                   (var_analysis_filtered['Year'] == selected_year_int))
+        else:
+            var_analysis_filtered = var_analysis.copy()
+            var_analysis_filtered['is_selected'] = False
+        
         # Create subplot with secondary y-axis
         fig = make_subplots(
             rows=2, cols=1,
@@ -716,45 +787,91 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
             specs=[[{"secondary_y": False}], [{"secondary_y": False}]]
         )
         
+        # Separate selected and non-selected points for Monthly Variance
+        non_selected = var_analysis_filtered[~var_analysis_filtered['is_selected']]
+        selected = var_analysis_filtered[var_analysis_filtered['is_selected']]
+        
         # Add Monthly Variance line
-        fig.add_trace(
-            go.Scatter(
-                x=var_analysis['Date'],
-                y=var_analysis['Monthly_change'],
-                mode='lines+markers',
-                name='Monthly Change %',
-                line=dict(color='#1f77b4', width=3),
-                marker=dict(size=8, color='#1f77b4'),
-                hovertemplate='<b>%{x|%b %Y}</b><br>' +
-                             'Monthly Change: %{y:.2f}%<br>' +
-                             '<extra></extra>'
-            ),
-            row=1, col=1
-        )
+        if not non_selected.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=non_selected['Date'],
+                    y=non_selected['Monthly_change'],
+                    mode='lines+markers',
+                    name='Monthly Change %',
+                    line=dict(color='#1f77b4', width=3),
+                    marker=dict(size=8, color='#1f77b4'),
+                    hovertemplate='<b>%{x|%b %Y}</b><br>' +
+                                 'Monthly Change: %{y:.2f}%<br>' +
+                                 '<extra></extra>',
+                    showlegend=True
+                ),
+                row=1, col=1
+            )
+        
+        # Add highlighted point for selected month (Monthly Variance)
+        if not selected.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=selected['Date'],
+                    y=selected['Monthly_change'],
+                    mode='markers',
+                    name='Selected Month',
+                    marker=dict(size=15, color='#ff0000', symbol='star'),
+                    hovertemplate='<b>%{x|%b %Y} (Selected)</b><br>' +
+                                 'Monthly Change: %{y:.2f}%<br>' +
+                                 '<extra></extra>',
+                    showlegend=True
+                ),
+                row=1, col=1
+            )
         
         # Add QoQ Change line
-        fig.add_trace(
-            go.Scatter(
-                x=var_analysis['Date'],
-                y=var_analysis['qaurter_change'],
-                mode='lines+markers',
-                name='QoQ Change %',
-                line=dict(color='#ff7f0e', width=3),
-                marker=dict(size=8, color='#ff7f0e'),
-                hovertemplate='<b>%{x|%b %Y}</b><br>' +
-                             'QoQ Change: %{y:.2f}%<br>' +
-                             '<extra></extra>'
-            ),
-            row=2, col=1
-        )
+        if not non_selected.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=non_selected['Date'],
+                    y=non_selected['qaurter_change'],
+                    mode='lines+markers',
+                    name='QoQ Change %',
+                    line=dict(color='#ff7f0e', width=3),
+                    marker=dict(size=8, color='#ff7f0e'),
+                    hovertemplate='<b>%{x|%b %Y}</b><br>' +
+                                 'QoQ Change: %{y:.2f}%<br>' +
+                                 '<extra></extra>',
+                    showlegend=True
+                ),
+                row=2, col=1
+            )
+        
+        # Add highlighted point for selected month (QoQ)
+        if not selected.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=selected['Date'],
+                    y=selected['qaurter_change'],
+                    mode='markers',
+                    name='Selected Month (QoQ)',
+                    marker=dict(size=15, color='#ff0000', symbol='star'),
+                    hovertemplate='<b>%{x|%b %Y} (Selected)</b><br>' +
+                                 'QoQ Change: %{y:.2f}%<br>' +
+                                 '<extra></extra>',
+                    showlegend=False  # Don't show duplicate in legend
+                ),
+                row=2, col=1
+            )
         
         # Add zero reference lines
         fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.7, row=1, col=1)
         fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.7, row=2, col=1)
         
         # Update layout
+        title_text = f"Trend Analysis - {title_suffix}"
+        if selected_month is not None and selected_month != "None":
+            title_text += f" (Data up to {selected_month} {selected_year})"
+            
         fig.update_layout(
-            title=f"Trend Analysis - {title_suffix}",
+            title=title_text,
             height=600,
             showlegend=True,
             legend=dict(
@@ -1193,13 +1310,15 @@ def main():
         
         with tab1:
             if selected_variance_column != "None":
-                # Use display_df for visualizations
+                # Use display_df for visualizations with month/year highlighting
                 trend_fig = create_trend_visualization(
-                    display_df, 
+                    st.session_state.master_df,  # Use full dataset for trends
                     selected_shape if selected_shape != "None" else None, 
                     selected_color if selected_color != "None" else None, 
                     selected_bucket if selected_bucket != "None" else None, 
-                    selected_variance_column
+                    selected_variance_column,
+                    selected_month if selected_month != "None" else None,
+                    selected_year if selected_year != "None" else None
                 )
                 st.plotly_chart(trend_fig, use_container_width=True)
             else:
