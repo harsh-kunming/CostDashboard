@@ -469,18 +469,6 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
     master_df = load_data('kunmings.pkl')
     if (type(FILTE_YEAR)==str) & (str(FILTE_YEAR).isnumeric()):
         FILTE_YEAR = int(FILTE_YEAR)
-    #     FILTE_YEAR = int(FILTE_YEAR)
-    #     filter_data=master_df[(master_df['Month'] == FILTER_MONTH) | \
-    #                                   (master_df['Year'] == FILTE_YEAR) | \
-    #                                     (master_df['Shape key'] == FILTER_SHAPE) |\
-    #                                     (master_df['Color Key'] == FILTER_COLOR) |\
-    #                                     (master_df['Buckets'] == FILTER_BUCKET)]
-    # else:
-    #     filter_data=master_df[(master_df['Month'] == FILTER_MONTH) | \
-                                      
-    #                                     (master_df['Shape key'] == FILTER_SHAPE) |\
-    #                                     (master_df['Color Key'] == FILTER_COLOR) |\
-    #                                     (master_df['Buckets'] == FILTER_BUCKET)]
     filter_data=master_df[(master_df['Month'] == FILTER_MONTH) & \
                                       (master_df['Year'] == FILTE_YEAR) & \
                                         (master_df['Shape key'] == FILTER_SHAPE) &\
