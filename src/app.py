@@ -986,6 +986,42 @@ def main():
                 history = history[:10]
                 save_upload_history(history)
                 st.session_state.upload_history = history
+    else:
+        try:
+            # Get file size
+            # file_size = uploaded_file.size if hasattr(uploaded_file, 'size') else None
+            
+            # Process the file
+            st.subheader("🗄️ Master Database")
+            st.session_state.master_df = load_data('kunmings.pkl')
+            st.session_state.data_processed = True
+            
+            # Add to upload history after successful processing
+            # st.session_state.upload_history = add_to_upload_history(
+            #     filename=uploaded_file.name,
+            #     file_size=file_size
+            # )
+            
+            # Show success message
+            # st.success(f"✅ Successfully processed: {uploaded_file.name}")
+            
+            # Force sidebar refresh to show updated history
+            # st.rerun()
+            
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+            # Still add to history but mark as failed
+            # history = load_upload_history()
+            # new_entry = {
+            #     "filename": uploaded_file.name,
+            #     "upload_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            #     "file_size": uploaded_file.size if hasattr(uploaded_file, 'size') else None,
+            #     "status": "Failed"
+            # }
+            # history.insert(0, new_entry)
+            # history = history[:10]
+            # save_upload_history(history)
+            # st.session_state.upload_history = history
                 
     if not st.session_state.master_df.empty or uploaded_file is not None:
         Month,Year,Shape,Color,Bucket,Variance_Column = st.columns(6)
