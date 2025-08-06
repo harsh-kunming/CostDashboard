@@ -986,7 +986,7 @@ def main():
                 history = history[:10]
                 save_upload_history(history)
                 st.session_state.upload_history = history
-    else:
+    elif not st.session_state.data_processed:
         try:
             # Get file size
             # file_size = uploaded_file.size if hasattr(uploaded_file, 'size') else None
