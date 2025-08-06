@@ -987,243 +987,243 @@ def main():
                 save_upload_history(history)
                 st.session_state.upload_history = history
                 
-    if not st.session_state.master_df.empty or uploaded_file is not None:
-        Month,Year,Shape,Color,Bucket,Variance_Column = st.columns(6)
-        with Month:
-            categories = ["None"]+sort_months(list(st.session_state.master_df['Month'].unique()))
-            selected_month = st.selectbox("Filter by Month", categories)
-        with Year:
-            years = ["None"]+sorted(list(st.session_state.master_df['Year'].unique()))
-            selected_year = st.selectbox("Filter by Year", years)
-        with Shape:
-            shapes = ["None"]+list(st.session_state.master_df['Shape key'].unique())
-            selected_shape = st.selectbox("Filter by Shape", shapes)
-        with Color:
-            colors = ["None"]+['WXYZ','FLY','FY','FIY','FVY']
-            selected_color = st.selectbox("Filter by Color", colors)
-        with Bucket:
-            buckets = ["None"]+list(stock_bucket.keys())
-            selected_bucket = st.selectbox("Filter by Bucket", buckets)
-        with Variance_Column:
-            variance_columns = ["None"]+['Current Average Cost','Max Buying Price','Min Selling Price']
-            selected_variance_column = st.selectbox("Select Variance Column", variance_columns)
-        # Apply filters
-        filtered_df = st.session_state.master_df.copy()
-        if ((selected_month != "None") & (selected_year != "None") & (selected_shape != "None") & (selected_color != "None") & (selected_bucket != "None")) :
-            filter_data,max_buying_price,current_avg_cost,gap_output,min_selling_price = get_filtered_data(selected_month,\
-                                                                                                                        selected_year,\
-                                                                                                                        selected_shape,\
-                                                                                                                        selected_color,\
-                                                                                                                        selected_bucket)
-            MOM_Variance,MOM_Percent_Change,MOM_QoQ_Percent_Change = get_summary_metrics(filter_data,selected_month,selected_shape,selected_year,\
-                                                                                        selected_color,\
-                                                                                        selected_bucket,\
-                                                                                        selected_variance_column)
-            # Display summary metrics
-            st.subheader("📊 Summary Metrics")
-            mbp,cac,mom_var,mom_perc,qoq_perc,GAP,msp = st.columns(7)
-            if type(max_buying_price)!= str:
-                with GAP:
-                    st.metric("Gap Analysis",value=gap_output,help=f"{'Excess' if gap_output>0 else 'Need' if gap_output < 0 else 'Enough'}")
-                with mbp:
-                    st.metric("Max Buying Price", f"${max_buying_price:,.2f}")
-                with msp:
-                    st.metric("Min Selling Price",f"${min_selling_price:,.2f}")
-                with cac:
-                    st.metric("Current Avg Cost", f"${current_avg_cost:,.2f}",help="90% of Sum of (Average Cost Total) / Weight ")
-                with mom_var:
-                    st.metric("MOM Variance ", f"{MOM_Variance:,.2f}%")
-                with mom_perc:
-                    st.metric("MOM Percent Change", f"{MOM_Percent_Change:.2f}%")
-                with qoq_perc:
-                    st.metric("MOM QoQ Percent Change", f"{MOM_QoQ_Percent_Change:.2f}%")
-                
-                
-            else:
-                with GAP:
-                    st.metric("Gap Analysis",value=gap_output,help=f"{'Excess' if gap_output>0 else 'Need' if gap_output < 0 else 'Enough'}")
-                with mbp:
-                    st.metric("Max Buying Price", f"0")
-                with cac:
-                    st.metric("Current Avg Cost", f"0")
-                with mom_var:
-                    st.metric("MOM Variance ", f"0")
-                with mom_perc:
-                    st.metric("MOM Percent Change", f"0")
-                with qoq_perc:
-                    st.metric("MOM QoQ Percent Change", f"0")
-                    
-                st.subheader("No Data Present for This Filter")
-            # Add visualization section
-            st.subheader("📈 Trend Analysis")
+    # if not st.session_state.master_df.empty or uploaded_file is not None:
+    Month,Year,Shape,Color,Bucket,Variance_Column = st.columns(6)
+    with Month:
+        categories = ["None"]+sort_months(list(st.session_state.master_df['Month'].unique()))
+        selected_month = st.selectbox("Filter by Month", categories)
+    with Year:
+        years = ["None"]+sorted(list(st.session_state.master_df['Year'].unique()))
+        selected_year = st.selectbox("Filter by Year", years)
+    with Shape:
+        shapes = ["None"]+list(st.session_state.master_df['Shape key'].unique())
+        selected_shape = st.selectbox("Filter by Shape", shapes)
+    with Color:
+        colors = ["None"]+['WXYZ','FLY','FY','FIY','FVY']
+        selected_color = st.selectbox("Filter by Color", colors)
+    with Bucket:
+        buckets = ["None"]+list(stock_bucket.keys())
+        selected_bucket = st.selectbox("Filter by Bucket", buckets)
+    with Variance_Column:
+        variance_columns = ["None"]+['Current Average Cost','Max Buying Price','Min Selling Price']
+        selected_variance_column = st.selectbox("Select Variance Column", variance_columns)
+    # Apply filters
+    filtered_df = st.session_state.master_df.copy()
+    if ((selected_month != "None") & (selected_year != "None") & (selected_shape != "None") & (selected_color != "None") & (selected_bucket != "None")) :
+        filter_data,max_buying_price,current_avg_cost,gap_output,min_selling_price = get_filtered_data(selected_month,\
+                                                                                                                    selected_year,\
+                                                                                                                    selected_shape,\
+                                                                                                                    selected_color,\
+                                                                                                                    selected_bucket)
+        MOM_Variance,MOM_Percent_Change,MOM_QoQ_Percent_Change = get_summary_metrics(filter_data,selected_month,selected_shape,selected_year,\
+                                                                                    selected_color,\
+                                                                                    selected_bucket,\
+                                                                                    selected_variance_column)
+        # Display summary metrics
+        st.subheader("📊 Summary Metrics")
+        mbp,cac,mom_var,mom_perc,qoq_perc,GAP,msp = st.columns(7)
+        if type(max_buying_price)!= str:
+            with GAP:
+                st.metric("Gap Analysis",value=gap_output,help=f"{'Excess' if gap_output>0 else 'Need' if gap_output < 0 else 'Enough'}")
+            with mbp:
+                st.metric("Max Buying Price", f"${max_buying_price:,.2f}")
+            with msp:
+                st.metric("Min Selling Price",f"${min_selling_price:,.2f}")
+            with cac:
+                st.metric("Current Avg Cost", f"${current_avg_cost:,.2f}",help="90% of Sum of (Average Cost Total) / Weight ")
+            with mom_var:
+                st.metric("MOM Variance ", f"{MOM_Variance:,.2f}%")
+            with mom_perc:
+                st.metric("MOM Percent Change", f"{MOM_Percent_Change:.2f}%")
+            with qoq_perc:
+                st.metric("MOM QoQ Percent Change", f"{MOM_QoQ_Percent_Change:.2f}%")
             
-            # Create tabs for different visualizations
-            st.markdown("""
-            <style>
-                /* Style all tab labels */
-                .stTabs [data-baseweb="tab-list"] {
-                    gap: 24px;
-                }
-                
-                .stTabs [data-baseweb="tab-list"] button {
-                    height: 50px;
-                    padding-left: 20px;
-                    padding-right: 20px;
-                }
-                
-                /* Inactive tabs - VIOLET */
-                .stTabs [data-baseweb="tab-list"] button p {
-                    color: #8B00FF;  /* Violet for inactive tabs */
-                    font-size: 18px;
-                }
-                
-                /* Active tab - RED */
-                .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] p {
-                    color: #FF0000;  /* Red for active tab */
-                    font-weight: bold;
-                }
-                
-                /* Hover effect */
-                .stTabs [data-baseweb="tab-list"] button:hover p {
-                    color: #FF0000;
-                    transition: color 0.3s;
-                }
-                
-                /* Tab underline/highlight - RED */
-                .stTabs [data-baseweb="tab-highlight"] {
-                    background-color: #FF0000;
-                    height: 3px;
-                }
-                
-                /* Tab panels background (optional) */
-                .stTabs [data-baseweb="tab-panel"] {
-                    padding-top: 20px;
-                }
-            </style>
-            """, unsafe_allow_html=True)
-            tab1, tab2 = st.tabs(["📊 Variance Trends", "📈 Summary Analytics"])
-            with tab1:
-                if selected_variance_column != "None":
-                    trend_fig = create_trend_visualization(
-                        st.session_state.master_df, 
-                        selected_shape, 
-                        selected_color, 
-                        selected_bucket, 
-                        selected_variance_column
-                    )
-                    st.plotly_chart(trend_fig, use_container_width=True)
-                else:
-                    st.info("Please select a variance column to view trend analysis.")
             
-            with tab2:
-                summary_fig = create_summary_charts(
+        else:
+            with GAP:
+                st.metric("Gap Analysis",value=gap_output,help=f"{'Excess' if gap_output>0 else 'Need' if gap_output < 0 else 'Enough'}")
+            with mbp:
+                st.metric("Max Buying Price", f"0")
+            with cac:
+                st.metric("Current Avg Cost", f"0")
+            with mom_var:
+                st.metric("MOM Variance ", f"0")
+            with mom_perc:
+                st.metric("MOM Percent Change", f"0")
+            with qoq_perc:
+                st.metric("MOM QoQ Percent Change", f"0")
+                
+            st.subheader("No Data Present for This Filter")
+        # Add visualization section
+        st.subheader("📈 Trend Analysis")
+        
+        # Create tabs for different visualizations
+        st.markdown("""
+        <style>
+            /* Style all tab labels */
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 24px;
+            }
+            
+            .stTabs [data-baseweb="tab-list"] button {
+                height: 50px;
+                padding-left: 20px;
+                padding-right: 20px;
+            }
+            
+            /* Inactive tabs - VIOLET */
+            .stTabs [data-baseweb="tab-list"] button p {
+                color: #8B00FF;  /* Violet for inactive tabs */
+                font-size: 18px;
+            }
+            
+            /* Active tab - RED */
+            .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] p {
+                color: #FF0000;  /* Red for active tab */
+                font-weight: bold;
+            }
+            
+            /* Hover effect */
+            .stTabs [data-baseweb="tab-list"] button:hover p {
+                color: #FF0000;
+                transition: color 0.3s;
+            }
+            
+            /* Tab underline/highlight - RED */
+            .stTabs [data-baseweb="tab-highlight"] {
+                background-color: #FF0000;
+                height: 3px;
+            }
+            
+            /* Tab panels background (optional) */
+            .stTabs [data-baseweb="tab-panel"] {
+                padding-top: 20px;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["📊 Variance Trends", "📈 Summary Analytics"])
+        with tab1:
+            if selected_variance_column != "None":
+                trend_fig = create_trend_visualization(
                     st.session_state.master_df, 
                     selected_shape, 
                     selected_color, 
-                    selected_bucket
+                    selected_bucket, 
+                    selected_variance_column
                 )
-                st.plotly_chart(summary_fig, use_container_width=True)
-            
-            st.subheader("📊 Data Table")
-            st.dataframe(
-                filter_data,
-                use_container_width=True,
-                hide_index=True
-                    )
-            # Download processed data
-            st.subheader("💾 Download Filtered Data")
-            # filter_data['Avg Cost Total'] = filter_data['avg']
-            csv = filter_data.loc[:,['Product Id','Shape key','Color Key','Avg Cost Total','Min Qty','Max Qty','Buying Price Avg','Max Buying Price']].to_csv(index=False)
-            st.download_button(
-            label="Download Filtered Data as CSV",
-            data=csv,
-            file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-            )
-            st.subheader("💾 Download Master Data")
-            csv = filtered_df.to_csv(index=False)
-            st.download_button(
-            label="Download Master Data as CSV",
-            data=csv,
-            file_name=f"processed_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-            )
+                st.plotly_chart(trend_fig, use_container_width=True)
+            else:
+                st.info("Please select a variance column to view trend analysis.")
         
-        # GAP Summary Table - Show for all combinations
-        st.subheader("📋 GAP Summary")
-        gap_summary_df = get_gap_summary_table(
-            st.session_state.master_df, 
-            selected_month, 
-            selected_year, 
-            selected_shape, 
-            selected_color, 
-            selected_bucket
+        with tab2:
+            summary_fig = create_summary_charts(
+                st.session_state.master_df, 
+                selected_shape, 
+                selected_color, 
+                selected_bucket
+            )
+            st.plotly_chart(summary_fig, use_container_width=True)
+        
+        st.subheader("📊 Data Table")
+        st.dataframe(
+            filter_data,
+            use_container_width=True,
+            hide_index=True
+                )
+        # Download processed data
+        st.subheader("💾 Download Filtered Data")
+        # filter_data['Avg Cost Total'] = filter_data['avg']
+        csv = filter_data.loc[:,['Product Id','Shape key','Color Key','Avg Cost Total','Min Qty','Max Qty','Buying Price Avg','Max Buying Price']].to_csv(index=False)
+        st.download_button(
+        label="Download Filtered Data as CSV",
+        data=csv,
+        file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv"
         )
-        
-        if not gap_summary_df.empty:
-            # Apply styling to highlight negative GAP values in red
-            def highlight_negative_gap(row):
-                if row['GAP Value'] < 0:
-                    return ['background-color: #ffebee; color: #c62828'] * len(row)
+        st.subheader("💾 Download Master Data")
+        csv = filtered_df.to_csv(index=False)
+        st.download_button(
+        label="Download Master Data as CSV",
+        data=csv,
+        file_name=f"processed_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv"
+        )
+    
+    # GAP Summary Table - Show for all combinations
+    st.subheader("📋 GAP Summary")
+    gap_summary_df = get_gap_summary_table(
+        st.session_state.master_df, 
+        selected_month, 
+        selected_year, 
+        selected_shape, 
+        selected_color, 
+        selected_bucket
+    )
+    
+    if not gap_summary_df.empty:
+        # Apply styling to highlight negative GAP values in red
+        def highlight_negative_gap(row):
+            if row['GAP Value'] < 0:
+                return ['background-color: #ffebee; color: #c62828'] * len(row)
+            else:
+                return [''] * len(row)
+        def highlight_shape_gap(row):
+            if row['GAP Value'] < 0:
+                return ['background-color: #ffebee; color: #c62828'] * len(row)
+            else:
+                if row['Shape']=='Cushion':
+                    return ['background-color: #baffc9; color: #c62828'] * len(row)
+                elif row['Shape']=='Oval':
+                    return ['background-color: #bae1ff; color: #c62828'] * len(row)
+                elif row['Shape']=='Pear':
+                    return ['background-color: #ffb3ba; color: #c62828'] * len(row)
+                elif row['Shape']=='Radiant':
+                    return ['background-color: #ffdfba; color: #c62828'] * len(row)
+                elif row['Shape']=='Other':
+                    return ['background-color: #ffffba; color: #c62828'] * len(row)
                 else:
                     return [''] * len(row)
-            def highlight_shape_gap(row):
-                if row['GAP Value'] < 0:
-                    return ['background-color: #ffebee; color: #c62828'] * len(row)
-                else:
-                    if row['Shape']=='Cushion':
-                        return ['background-color: #baffc9; color: #c62828'] * len(row)
-                    elif row['Shape']=='Oval':
-                        return ['background-color: #bae1ff; color: #c62828'] * len(row)
-                    elif row['Shape']=='Pear':
-                        return ['background-color: #ffb3ba; color: #c62828'] * len(row)
-                    elif row['Shape']=='Radiant':
-                        return ['background-color: #ffdfba; color: #c62828'] * len(row)
-                    elif row['Shape']=='Other':
-                        return ['background-color: #ffffba; color: #c62828'] * len(row)
-                    else:
-                        return [''] * len(row)
-            styled_df = gap_summary_df.style.apply(highlight_shape_gap, axis=1)
-            # styled_df = gap_summary_df.style.apply(highlight_negative_gap, axis=1)
-            
-            st.dataframe(
-                styled_df,
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Download GAP Summary
-            st.subheader("💾 Download GAP Summary")
-            gap_summary_df_cols = ['Month','Year','Shape','Color','Bucket','GAP Value']
-            gap_csv = gap_summary_df.loc[:,gap_summary_df_cols].to_csv(index=False)
-            gap_csv_excess = gap_summary_df[gap_summary_df['Status']=='Excess'].loc[:,gap_summary_df_cols].to_csv(index=False)
-            gap_csv_need = gap_summary_df[gap_summary_df['Status']=='Need'].loc[:,gap_summary_df_cols].to_csv(index=False)
-            st.download_button(
-                label="Download GAP Summary as CSV",
-                data=gap_csv,
-                file_name=f"gap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-            st.download_button(
-                label="Download GAP Excess Summary as CSV",
-                data=gap_csv_excess,
-                file_name=f"gap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-            st.download_button(
-                label="Download GAP Need Summary as CSV",
-                data=gap_csv_need,
-                file_name=f"gap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-        else:
-            st.info("No data available for GAP analysis with current filters.")
-            
-        if not ((selected_month != "None") & (selected_year != "None") & (selected_shape != "None") & (selected_color != "None") & (selected_bucket != "None")):
-            st.info("Please select all filter values except 'Select Variance Column' to view detailed metrics.")
+        styled_df = gap_summary_df.style.apply(highlight_shape_gap, axis=1)
+        # styled_df = gap_summary_df.style.apply(highlight_negative_gap, axis=1)
         
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Download GAP Summary
+        st.subheader("💾 Download GAP Summary")
+        gap_summary_df_cols = ['Month','Year','Shape','Color','Bucket','GAP Value']
+        gap_csv = gap_summary_df.loc[:,gap_summary_df_cols].to_csv(index=False)
+        gap_csv_excess = gap_summary_df[gap_summary_df['Status']=='Excess'].loc[:,gap_summary_df_cols].to_csv(index=False)
+        gap_csv_need = gap_summary_df[gap_summary_df['Status']=='Need'].loc[:,gap_summary_df_cols].to_csv(index=False)
+        st.download_button(
+            label="Download GAP Summary as CSV",
+            data=gap_csv,
+            file_name=f"gap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        st.download_button(
+            label="Download GAP Excess Summary as CSV",
+            data=gap_csv_excess,
+            file_name=f"gap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        st.download_button(
+            label="Download GAP Need Summary as CSV",
+            data=gap_csv_need,
+            file_name=f"gap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
     else:
-        st.info("No data in master database. Upload an Excel file to get started!")
+        st.info("No data available for GAP analysis with current filters.")
+        
+    if not ((selected_month != "None") & (selected_year != "None") & (selected_shape != "None") & (selected_color != "None") & (selected_bucket != "None")):
+        st.info("Please select all filter values except 'Select Variance Column' to view detailed metrics.")
+        
+    # else:
+    #     st.info("No data in master database. Upload an Excel file to get started!")
     # Reset button
     if st.sidebar.button("Reset Data Processing"):
         st.session_state.data_processed = False
