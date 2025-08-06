@@ -943,7 +943,8 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
     Returns:
         plotly figure object
     """
-    
+    cols = master_df.columns.tolist()
+    master_df = master_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
     # Filter data - if all are None, use entire dataset
     if selected_shape is None and selected_color is None and selected_bucket is None:
         filtered_df = master_df
@@ -1201,6 +1202,8 @@ def main():
                 # Process the file
                 st.subheader("🗄️ Updating Master Database")
                 st.session_state.master_df = get_final_data(uploaded_file)
+                cols = st.session_state.master_df.columns.tolist()
+                st.session_state.master_df = st.session_state.master_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
                 st.session_state.data_processed = True
                 
                 # Add to upload history after successful processing
@@ -1255,6 +1258,8 @@ def main():
             selected_variance_column = st.selectbox("Select Variance Column", variance_columns)
         
         # Apply filters
+        cols = st.session_state.master_df.columns.tolist()
+        st.session_state.master_df = st.session_state.master_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
         filtered_df = st.session_state.master_df.copy()
         
         # Check if all filters are selected (not None)
