@@ -92,7 +92,10 @@ def load_master_dataset():
     """Load the master dataset if it exists"""
     try:
         if check_master_dataset_exists():
-            return load_data('kunmings.pkl')
+            df=load_data('kunmings.pkl')
+            if 'Product Id' in df.columns:
+                df['Product Id'] = df['Product Id'].astype(str)
+            return df
         else:
             return pd.DataFrame()
     except Exception as e:
@@ -105,14 +108,21 @@ def load_data(file):
         # String file path (for database files)
         file_type = file.split('.')[-1]
         if file_type == 'csv':
-            return pd.read_csv(file)
+            df=pd.read_csv(file)
+            if 'Product Id' in df.columns:
+                df['Product Id'] = df['Product Id'].astype(str)
+            return df
         elif file_type == 'pkl':
             df = pd.read_pickle(f"src/{file}")
+            if 'Product Id' in df.columns:
+                df['Product Id'] = df['Product Id'].astype(str)
             return df
         elif file_type in ['xlsx', 'xls']:
             df = pd.read_excel(file, sheet_name=None)
             df_dict = {}
             for sheet_name, df_ in df.items():
+                if 'Product Id' in df_.columns:
+                    df_['Product Id'] = df_['Product Id'].astype(str)
                 df_dict[sheet_name] = df_
             # st.info(df.keys())
             return df_dict
