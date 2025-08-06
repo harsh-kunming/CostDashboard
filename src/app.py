@@ -619,6 +619,8 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
     gap_summary = []
     
     # Get unique values for each filter
+    cols = master_df.columns.tolist()
+    master_df = master_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
     months = [selected_month] if selected_month != "None" else list(master_df['Month'].unique())
     years = [selected_year] if selected_year != "None" else list(master_df['Year'].unique())
     shapes = [selected_shape] if selected_shape != "None" else list(master_df['Shape key'].unique())
