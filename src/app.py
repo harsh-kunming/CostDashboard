@@ -674,15 +674,25 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         plotly figure object
     """
     
-    # Filter data based on selections
-    if (selected_shape!=None and selected_color!=None and selected_bucket!=None) or (selected_shape!="None" and selected_color!="None" and selected_bucket!="None"):
-        filtered_df = master_df[
-            (master_df['Shape key'] == selected_shape) & 
-            (master_df['Color Key'] == selected_color) & 
-            (master_df['Buckets'] == selected_bucket)
-        ]
-    else:
+    # Filter data based on selections - if all are None, use entire dataset
+    if selected_shape is None and selected_color is None and selected_bucket is None:
         filtered_df = master_df
+        title_suffix = "All Data"
+    else:
+        filtered_df = master_df.copy()
+        title_parts = []
+        
+        if selected_shape is not None:
+            filtered_df = filtered_df[filtered_df['Shape key'] == selected_shape]
+            title_parts.append(selected_shape)
+        if selected_color is not None:
+            filtered_df = filtered_df[filtered_df['Color Key'] == selected_color]
+            title_parts.append(selected_color)
+        if selected_bucket is not None:
+            filtered_df = filtered_df[filtered_df['Buckets'] == selected_bucket]
+            title_parts.append(selected_bucket)
+        
+        title_suffix = " | ".join(title_parts) if title_parts else "Filtered Data"
     
     if filtered_df.empty:
         # Return empty figure if no data
@@ -701,7 +711,7 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         variance_col = 'Buying Price Avg'
     elif variance_col == 'None' or variance_col == None:
         variance_col = 'Max Buying Price' # Default column
-    # monthly_variance
+    
     # Calculate monthly variance data
     try:
         var_analysis = monthly_variance(filtered_df, variance_col)
@@ -757,7 +767,7 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         
         # Update layout
         fig.update_layout(
-            title=f"Trend Analysis - {selected_shape} | {selected_color} | {selected_bucket}",
+            title=f"Trend Analysis - {title_suffix}",
             height=600,
             showlegend=True,
             legend=dict(
@@ -827,15 +837,25 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
         plotly figure object
     """
     
-    # Filter data
-    if (selected_shape!=None and selected_color!=None and selected_bucket!=None) or (selected_shape!="None" and selected_color!="None" and selected_bucket!="None"):
-        filtered_df = master_df[
-            (master_df['Shape key'] == selected_shape) & 
-            (master_df['Color Key'] == selected_color) & 
-            (master_df['Buckets'] == selected_bucket)
-        ]
-    else:
+    # Filter data - if all are None, use entire dataset
+    if selected_shape is None and selected_color is None and selected_bucket is None:
         filtered_df = master_df
+        title_suffix = "All Data"
+    else:
+        filtered_df = master_df.copy()
+        title_parts = []
+        
+        if selected_shape is not None:
+            filtered_df = filtered_df[filtered_df['Shape key'] == selected_shape]
+            title_parts.append(selected_shape)
+        if selected_color is not None:
+            filtered_df = filtered_df[filtered_df['Color Key'] == selected_color]
+            title_parts.append(selected_color)
+        if selected_bucket is not None:
+            filtered_df = filtered_df[filtered_df['Buckets'] == selected_bucket]
+            title_parts.append(selected_bucket)
+        
+        title_suffix = " | ".join(title_parts) if title_parts else "Filtered Data"
     
     if filtered_df.empty:
         fig = go.Figure()
@@ -926,7 +946,7 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
     
     # Update layout
     fig.update_layout(
-        title=f"Summary Analytics - {selected_shape} | {selected_color} | {selected_bucket}",
+        title=f"Summary Analytics - {title_suffix}",
         height=500,
         showlegend=False,
         plot_bgcolor='white',
@@ -1050,18 +1070,36 @@ def main():
         
         # Apply filters
         filtered_df = st.session_state.master_df.copy()
-        if ((selected_month != "None") & (selected_year != "None") & (selected_shape != "None") & (selected_color != "None") & (selected_bucket != "None")) :
-            filter_data,max_buying_price,current_avg_cost,gap_output,min_selling_price = get_filtered_data(selected_month,\
-                                                                                                                        selected_year,\
-                                                                                                                        selected_shape,\
-                                                                                                                        selected_color,\
-                                                                                                                        selected_bucket)
-            MOM_Variance,MOM_Percent_Change,MOM_QoQ_Percent_Change = get_summary_metrics(filter_data,selected_month,selected_shape,selected_year,\
-                                                                                        selected_color,\
-                                                                                        selected_bucket,\
-                                                                                        selected_variance_column)
-            # Display summary metrics
-            st.subheader("📊 Summary Metrics")
+        
+        # Check if all filters are selected (not None)
+        all_filters_selected = ((selected_month != "None") & (selected_year != "None") & 
+                               (selected_shape != "None") & (selected_color != "None") & 
+                               (selected_bucket != "None"))
+        
+        # Apply partial filters to the dataframe for visualizations
+        display_df = st.session_state.master_df.copy()
+        if selected_month != "None":
+            display_df = display_df[display_df['Month'] == selected_month]
+        if selected_year != "None":
+            display_df = display_df[display_df['Year'] == int(selected_year)]
+        if selected_shape != "None":
+            display_df = display_df[display_df['Shape key'] == selected_shape]
+        if selected_color != "None":
+            display_df = display_df[display_df['Color Key'] == selected_color]
+        if selected_bucket != "None":
+            display_df = display_df[display_df['Buckets'] == selected_bucket]
+        
+        # Display summary metrics
+        st.subheader("📊 Summary Metrics")
+        
+        if all_filters_selected:
+            # Get detailed metrics when all filters are selected
+            filter_data,max_buying_price,current_avg_cost,gap_output,min_selling_price = get_filtered_data(
+                selected_month, selected_year, selected_shape, selected_color, selected_bucket)
+            MOM_Variance,MOM_Percent_Change,MOM_QoQ_Percent_Change = get_summary_metrics(
+                filter_data,selected_month,selected_shape,selected_year,
+                selected_color,selected_bucket,selected_variance_column)
+            
             mbp,cac,mom_var,mom_perc,qoq_perc,GAP,msp = st.columns(7)
             if type(max_buying_price)!= str:
                 with GAP:
@@ -1078,13 +1116,13 @@ def main():
                     st.metric("MOM Percent Change", f"{MOM_Percent_Change:.2f}%")
                 with qoq_perc:
                     st.metric("MOM QoQ Percent Change", f"{MOM_QoQ_Percent_Change:.2f}%")
-                
-                
             else:
                 with GAP:
                     st.metric("Gap Analysis",value=gap_output,help=f"{'Excess' if gap_output>0 else 'Need' if gap_output < 0 else 'Enough'}")
                 with mbp:
                     st.metric("Max Buying Price", f"0")
+                with msp:
+                    st.metric("Min Selling Price", f"0")
                 with cac:
                     st.metric("Current Avg Cost", f"0")
                 with mom_var:
@@ -1093,101 +1131,136 @@ def main():
                     st.metric("MOM Percent Change", f"0")
                 with qoq_perc:
                     st.metric("MOM QoQ Percent Change", f"0")
-                    
-                st.subheader("No Data Present for This Filter")
-            # Add visualization section
-            st.subheader("📈 Trend Analysis")
+                if filter_data.empty:
+                    st.info("No data present for this specific filter combination")
+        else:
+            # Show aggregated metrics for partial or no filters
+            if not display_df.empty:
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    avg_max_buying = display_df['Max Buying Price'].mean()
+                    st.metric("Avg Max Buying Price", f"${avg_max_buying:,.2f}")
+                with col2:
+                    avg_min_selling = display_df['Min Selling Price'].mean()
+                    st.metric("Avg Min Selling Price", f"${avg_min_selling:,.2f}")
+                with col3:
+                    total_weight = display_df['Weight'].sum()
+                    st.metric("Total Weight", f"{total_weight:,.2f}")
+                with col4:
+                    total_products = len(display_df)
+                    st.metric("Total Products", f"{total_products:,}")
+                
+                st.info("💡 Select all filters (Month, Year, Shape, Color, and Bucket) to view detailed metrics including Gap Analysis and MOM Variance calculations.")
+            else:
+                st.warning("No data available for selected filters")
+        
+        # Add visualization section - show for all cases
+        st.subheader("📈 Trend Analysis")
             
-            # Create tabs for different visualizations
-            st.markdown("""
-            <style>
-                /* Style all tab labels */
-                .stTabs [data-baseweb="tab-list"] {
-                    gap: 24px;
-                }
-                
-                .stTabs [data-baseweb="tab-list"] button {
-                    height: 50px;
-                    padding-left: 20px;
-                    padding-right: 20px;
-                }
-                
-                /* Inactive tabs - VIOLET */
-                .stTabs [data-baseweb="tab-list"] button p {
-                    color: #8B00FF;  /* Violet for inactive tabs */
-                    font-size: 18px;
-                }
-                
-                /* Active tab - RED */
-                .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] p {
-                    color: #FF0000;  /* Red for active tab */
-                    font-weight: bold;
-                }
-                
-                /* Hover effect */
-                .stTabs [data-baseweb="tab-list"] button:hover p {
-                    color: #FF0000;
-                    transition: color 0.3s;
-                }
-                
-                /* Tab underline/highlight - RED */
-                .stTabs [data-baseweb="tab-highlight"] {
-                    background-color: #FF0000;
-                    height: 3px;
-                }
-                
-                /* Tab panels background (optional) */
-                .stTabs [data-baseweb="tab-panel"] {
-                    padding-top: 20px;
-                }
-            </style>
-            """, unsafe_allow_html=True)
-            tab1, tab2 = st.tabs(["📊 Variance Trends", "📈 Summary Analytics"])
-            with tab1:
-                if selected_variance_column != "None":
-                    trend_fig = create_trend_visualization(
-                        st.session_state.master_df, 
-                        selected_shape, 
-                        selected_color, 
-                        selected_bucket, 
-                        selected_variance_column
-                    )
-                    st.plotly_chart(trend_fig, use_container_width=True)
-                else:
-                    st.info("Please select a variance column to view trend analysis.")
+        # Create tabs for different visualizations
+        st.markdown("""
+        <style>
+            /* Style all tab labels */
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 24px;
+            }
             
-            with tab2:
-                summary_fig = create_summary_charts(
-                    st.session_state.master_df, 
-                    selected_shape, 
-                    selected_color, 
-                    selected_bucket
+            .stTabs [data-baseweb="tab-list"] button {
+                height: 50px;
+                padding-left: 20px;
+                padding-right: 20px;
+            }
+            
+            /* Inactive tabs - VIOLET */
+            .stTabs [data-baseweb="tab-list"] button p {
+                color: #8B00FF;  /* Violet for inactive tabs */
+                font-size: 18px;
+            }
+            
+            /* Active tab - RED */
+            .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] p {
+                color: #FF0000;  /* Red for active tab */
+                font-weight: bold;
+            }
+            
+            /* Hover effect */
+            .stTabs [data-baseweb="tab-list"] button:hover p {
+                color: #FF0000;
+                transition: color 0.3s;
+            }
+            
+            /* Tab underline/highlight - RED */
+            .stTabs [data-baseweb="tab-highlight"] {
+                background-color: #FF0000;
+                height: 3px;
+            }
+            
+            /* Tab panels background (optional) */
+            .stTabs [data-baseweb="tab-panel"] {
+                padding-top: 20px;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        tab1, tab2 = st.tabs(["📊 Variance Trends", "📈 Summary Analytics"])
+        
+        with tab1:
+            if selected_variance_column != "None":
+                # Use display_df for visualizations
+                trend_fig = create_trend_visualization(
+                    display_df, 
+                    selected_shape if selected_shape != "None" else None, 
+                    selected_color if selected_color != "None" else None, 
+                    selected_bucket if selected_bucket != "None" else None, 
+                    selected_variance_column
                 )
-                st.plotly_chart(summary_fig, use_container_width=True)
-            
-            st.subheader("📊 Data Table")
-            st.dataframe(
-                filter_data,
-                use_container_width=True,
-                hide_index=True
-                    )
-            # Download processed data
-            st.subheader("💾 Download Filtered Data")
-            # filter_data['Avg Cost Total'] = filter_data['avg']
-            csv = filter_data.loc[:,['Product Id','Shape key','Color Key','Avg Cost Total','Min Qty','Max Qty','Buying Price Avg','Max Buying Price']].to_csv(index=False)
-            st.download_button(
-            label="Download Filtered Data as CSV",
-            data=csv,
-            file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
+                st.plotly_chart(trend_fig, use_container_width=True)
+            else:
+                st.info("Please select a variance column to view trend analysis.")
+        
+        with tab2:
+            # Use display_df for visualizations
+            summary_fig = create_summary_charts(
+                display_df, 
+                selected_shape if selected_shape != "None" else None, 
+                selected_color if selected_color != "None" else None, 
+                selected_bucket if selected_bucket != "None" else None
             )
+            st.plotly_chart(summary_fig, use_container_width=True)
+        
+        # Data Table and Downloads
+        st.subheader("📊 Data Table")
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Download buttons
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("💾 Download Filtered Data")
+            if 'Product Id' in display_df.columns:
+                download_columns = ['Product Id','Shape key','Color Key','Avg Cost Total',
+                                  'Min Qty','Max Qty','Buying Price Avg','Max Buying Price']
+                available_columns = [col for col in download_columns if col in display_df.columns]
+                csv = display_df.loc[:,available_columns].to_csv(index=False)
+                st.download_button(
+                    label="Download Filtered Data as CSV",
+                    data=csv,
+                    file_name=f"filtered_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+        
+        with col2:
             st.subheader("💾 Download Master Data")
-            csv = filtered_df.to_csv(index=False)
+            csv = st.session_state.master_df.to_csv(index=False)
             st.download_button(
-            label="Download Master Data as CSV",
-            data=csv,
-            file_name=f"processed_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
+                label="Download Master Data as CSV",
+                data=csv,
+                file_name=f"master_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
             )
         
         # GAP Summary Table - Show for all combinations
@@ -1259,9 +1332,6 @@ def main():
             )
         else:
             st.info("No data available for GAP analysis with current filters.")
-            
-        if not ((selected_month != "None") & (selected_year != "None") & (selected_shape != "None") & (selected_color != "None") & (selected_bucket != "None")):
-            st.info("Please select all filter values except 'Select Variance Column' to view detailed metrics.")
         
     else:
         st.info("No data in master database. Upload an Excel file to get started!")
