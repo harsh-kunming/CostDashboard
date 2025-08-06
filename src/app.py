@@ -382,6 +382,8 @@ def poplutate_monthly_stock_sheet(file):
     df_stock = calculate_buying_price_avg(df_stock)
     df_stock = populate_selling_prices(df_min_sp,df_stock)
     df_stock.fillna(0,inplace=True)
+    cols = df_stock.columns.tolist()
+    df_stock = df_stock.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
     return df_stock
 def calculate_qoq_variance_percentage(current_quarter_price, previous_quarter_price):
     """
@@ -467,6 +469,8 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
     PARENT_DF : Parent DataFrame to concatenate with the monthly stock data
     """
     master_df = load_data('kunmings.pkl')
+    cols = master_df.columns.tolist()
+    master_df = master_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
     if (type(FILTE_YEAR)==str) & (str(FILTE_YEAR).isnumeric()):
         FILTE_YEAR = int(FILTE_YEAR)
     filter_data=master_df[(master_df['Month'] == FILTER_MONTH) & \
@@ -485,21 +489,14 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
         max_buying_price = filter_data['Max Buying Price'].max()
         current_avg_cost = (sum(filter_data['Avg Cost Total'])/(filter_data['Weight'].sum() if filter_data['Weight'].sum() != 0 else 1))*.9
         min_selling_price = filter_data['Min Selling Price'].min()
-        # avg_value = _filter_[FILTER_MONTHLY_VAR_COL].mean()
-        # MOM_Variance = (sum((filter_data[FILTER_MONTHLY_VAR_COL] - avg_value)/ avg_value )/filter_data.shape[0]) * 100
-        # var_analysis = monthly_variance(_filter_,FILTER_MONTHLY_VAR_COL)
-        # MOM_Percent_Change = var_analysis[(var_analysis['Month'] == FILTER_MONTH) & (var_analysis['Year'] == FILTE_YEAR)]['Monthly_change'].values.tolist()[0]
-        # MOM_QoQ_Percent_Change = var_analysis[(var_analysis['Month'] == FILTER_MONTH) & (var_analysis['Year'] == FILTE_YEAR)]['qaurter_change'].values.tolist()[0]
-        # if MOM_Percent_Change == np.inf:
-        #     MOM_Percent_Change = 0
-        # if MOM_QoQ_Percent_Change == np.inf:
-        #     MOM_QoQ_Percent_Change = 0
         return [filter_data,int(max_buying_price),int(current_avg_cost), gap_analysis_op,min_selling_price]
     except:
         return [pd.DataFrame(columns=master_df.columns.tolist()),f"There is {filter_data.shape[0]} rows after filter",f"There is {filter_data.shape[0]} rows after filter",gap_analysis_op,0]
 def get_summary_metrics(filter_data,Filter_Month,FILTER_SHAPE,FILTE_YEAR,FILTER_COLOR,FILTER_BUCKET,FILTER_MONTHLY_VAR_COL):
     FILTE_YEAR = int(FILTE_YEAR)
     master_df = load_data('kunmings.pkl')
+    cols = master_df.columns.tolist()
+    master_df = master_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
     _filter_ = master_df[(master_df['Shape key'] == FILTER_SHAPE) &\
                                         (master_df['Color Key'] == FILTER_COLOR) &\
                                         (master_df['Buckets'] == FILTER_BUCKET)]
@@ -618,6 +615,8 @@ def get_final_data(file,PARENT_DF = 'kunmings.pkl'):
     parent_df = load_data(PARENT_DF)
     master_df = pd.concat([df, parent_df], ignore_index=True,axis=0)
     # master_df = master_df.drop_duplicates(subset='Product Id')
+    cols = master_df.columns.tolist()
+    master_df = master_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
     save_data(master_df)
     return master_df
 def sort_months(months):
