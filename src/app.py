@@ -619,8 +619,6 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
     gap_summary = []
     
     # Get unique values for each filter
-    cols = master_df.columns.tolist()
-    master_df = master_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
     months = [selected_month] if selected_month != "None" else list(master_df['Month'].unique())
     years = [selected_year] if selected_year != "None" else list(master_df['Year'].unique())
     shapes = [selected_shape] if selected_shape != "None" else list(master_df['Shape key'].unique())
@@ -929,7 +927,8 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
         )
         return fig
 
-def create_summary_charts(master_df, selected_shape, selected_color, selected_bucket):
+def create_summary_charts(master_df, selected_shape, selected_color, selected_bucket, 
+                         selected_month=None, selected_year=None):
     """
     Create summary charts showing overall trends across all months/years
     
@@ -938,6 +937,8 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
         selected_shape: Selected shape filter
         selected_color: Selected color filter
         selected_bucket: Selected bucket filter
+        selected_month: Selected month filter (for highlighting)
+        selected_year: Selected year filter (for highlighting)
     
     Returns:
         plotly figure object
@@ -988,6 +989,25 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
     summary_data['Date'] = pd.to_datetime(summary_data['Date'], format='%d-%m-%Y')
     summary_data = summary_data.sort_values('Date')
     
+    # Filter data up to selected month/year if specified
+    if selected_month is not None and selected_month != "None" and selected_year is not None and selected_year != "None":
+        selected_year_int = int(selected_year)
+        selected_month_num = month_map.get(selected_month, 0)
+        
+        # Create a cutoff date
+        cutoff_date = pd.to_datetime(f"{selected_year_int}-{selected_month_num:02d}-01")
+        summary_data_filtered = summary_data[summary_data['Date'] <= cutoff_date].copy()
+        
+        # Add highlight column for selected month
+        summary_data_filtered['is_selected'] = ((summary_data_filtered['Month'] == selected_month) & 
+                                               (summary_data_filtered['Year'] == selected_year_int))
+    else:
+        summary_data_filtered = summary_data.copy()
+        summary_data_filtered['is_selected'] = False
+    
+    # Separate selected and non-selected points
+    non_selected = summary_data_filtered[~summary_data_filtered['is_selected']]
+    selected = summary_data_filtered[summary_data_filtered['is_selected']]
     
     # Create subplots
     fig = make_subplots(
@@ -999,60 +1019,120 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
     )
     
     # Average Cost Trend
-    fig.add_trace(
-        go.Scatter(
-            x=summary_data['Date'],
-            y=summary_data['Avg Cost Total'],
-            mode='lines+markers',
-            name='Avg Cost',
-            line=dict(color='#2E86AB', width=2),
-            marker=dict(size=6)
-        ),
-        row=1, col=1
-    )
+    if not non_selected.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=non_selected['Date'],
+                y=non_selected['Avg Cost Total'],
+                mode='lines+markers',
+                name='Avg Cost',
+                line=dict(color='#2E86AB', width=2),
+                marker=dict(size=6),
+                showlegend=False
+            ),
+            row=1, col=1
+        )
+    if not selected.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=selected['Date'],
+                y=selected['Avg Cost Total'],
+                mode='markers',
+                name='Selected Month',
+                marker=dict(size=12, color='#ff0000', symbol='star'),
+                showlegend=False
+            ),
+            row=1, col=1
+        )
     
     # Max Buying Price Trend
-    fig.add_trace(
-        go.Scatter(
-            x=summary_data['Date'],
-            y=summary_data['Max Buying Price'],
-            mode='lines+markers',
-            name='Max Buying Price',
-            line=dict(color='#A23B72', width=2),
-            marker=dict(size=6)
-        ),
-        row=1, col=2
-    )
+    if not non_selected.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=non_selected['Date'],
+                y=non_selected['Max Buying Price'],
+                mode='lines+markers',
+                name='Max Buying Price',
+                line=dict(color='#A23B72', width=2),
+                marker=dict(size=6),
+                showlegend=False
+            ),
+            row=1, col=2
+        )
+    if not selected.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=selected['Date'],
+                y=selected['Max Buying Price'],
+                mode='markers',
+                name='Selected Month',
+                marker=dict(size=12, color='#ff0000', symbol='star'),
+                showlegend=False
+            ),
+            row=1, col=2
+        )
     
     # Total Weight
-    fig.add_trace(
-        go.Scatter(
-            x=summary_data['Date'],
-            y=summary_data['Weight'],
-            mode='lines+markers',
-            name='Total Weight',
-            line=dict(color='#F18F01', width=2),
-            marker=dict(size=6)
-        ),
-        row=2, col=1
-    )
+    if not non_selected.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=non_selected['Date'],
+                y=non_selected['Weight'],
+                mode='lines+markers',
+                name='Total Weight',
+                line=dict(color='#F18F01', width=2),
+                marker=dict(size=6),
+                showlegend=False
+            ),
+            row=2, col=1
+        )
+    if not selected.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=selected['Date'],
+                y=selected['Weight'],
+                mode='markers',
+                name='Selected Month',
+                marker=dict(size=12, color='#ff0000', symbol='star'),
+                showlegend=False
+            ),
+            row=2, col=1
+        )
     
     # Product Count
-    fig.add_trace(
-        go.Scatter(
-            x=summary_data['Date'],
-            y=summary_data['Product Id'],
-            mode='lines+markers',
-            name='Product Count',
-            line=dict(color='#C73E1D', width=2),
-            marker=dict(size=6)
-        ),
-        row=2, col=2
-    )
+    if not non_selected.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=non_selected['Date'],
+                y=non_selected['Product Id'],
+                mode='lines+markers',
+                name='Product Count',
+                line=dict(color='#C73E1D', width=2),
+                marker=dict(size=6),
+                showlegend=False
+            ),
+            row=2, col=2
+        )
+    if not selected.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=selected['Date'],
+                y=selected['Product Id'],
+                mode='markers',
+                name='Selected Month',
+                marker=dict(size=12, color='#ff0000', symbol='star'),
+                showlegend=False
+            ),
+            row=2, col=2
+        )
     
     # Update layout
+    title_text = f"Summary Analytics - {title_suffix}"
+    if selected_month is not None and selected_month != "None":
+        title_text += f" (Data up to {selected_month} {selected_year})"
+        
     fig.update_layout(
-        title=f"Summary Analytics - {title_suffix}",
+        title=title_text,
         height=500,
         showlegend=False,
         plot_bgcolor='white',
@@ -1327,12 +1407,14 @@ def main():
                 st.info("Please select a variance column to view trend analysis.")
         
         with tab2:
-            # Use display_df for visualizations
+            # Use full master_df for visualizations with month/year highlighting
             summary_fig = create_summary_charts(
-                display_df, 
+                st.session_state.master_df,  # Use full dataset for trends
                 selected_shape if selected_shape != "None" else None, 
                 selected_color if selected_color != "None" else None, 
-                selected_bucket if selected_bucket != "None" else None
+                selected_bucket if selected_bucket != "None" else None,
+                selected_month if selected_month != "None" else None,
+                selected_year if selected_year != "None" else None
             )
             st.plotly_chart(summary_fig, use_container_width=True)
         
