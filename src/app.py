@@ -524,8 +524,8 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
     min_qty = filter_data['Min Qty'].min()
     stock_in_hand = filter_data.shape[0]
     if stock_in_hand == 0:
-        max_qty_dict = joblib.load('max_qty.pkl')
-        min_qty_dict = joblib.load('min_qty.pkl')
+        max_qty_dict = joblib.load('src/max_qty.pkl')
+        min_qty_dict = joblib.load('src/min_qty.pkl')
         filter_shape_color = FILTER_SHAPE + '_' + FILTER_COLOR
         latest_month_max_qty_dict = list(max_qty_dict[filter_shape_color].keys())[-1]
         latest_month_min_qty_dict = list(min_qty_dict[filter_shape_color].keys())[-1]
