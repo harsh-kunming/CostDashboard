@@ -718,7 +718,7 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                 'Bucket': bucket,
                                 'Max Qty': max_qty,
                                 'Min Qty': min_qty,
-                                'Stock in Hand': stock_in_hand,
+                                'Stock in Hand': 0,
                                 'GAP Value': int(gap_value),
                                 'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate'
                                 })
