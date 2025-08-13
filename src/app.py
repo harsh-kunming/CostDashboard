@@ -1944,6 +1944,8 @@ def main():
                 
                 # Data Table and Downloads
                 st.subheader("📊 Data Table")
+                cols = display_df.columns.tolist()
+                display_df = display_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
                 try:
                     st.dataframe(
                         display_df,
