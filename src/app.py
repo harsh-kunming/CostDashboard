@@ -700,7 +700,29 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                 'Stock in Hand': stock_in_hand,
                                 'GAP Value': int(gap_value),
                                 'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate'
-                            })
+                                })
+                        else:
+                            max_qty_dict = joblib.load('src/max_qty.pkl')
+                            min_qty_dict = joblib.load('src/min_qty.pkl')
+                            filter_shape_color = shape + '_' + color
+                            latest_month_max_qty_dict = list(max_qty_dict[filter_shape_color].keys())[-1]
+                            latest_month_min_qty_dict = list(min_qty_dict[filter_shape_color].keys())[-1]
+                            max_qty = max_qty_dict[filter_shape_color][latest_month_max_qty_dict][bucket]
+                            min_qty = min_qty_dict[filter_shape_color][latest_month_max_qty_dict][bucket]
+                            gap_value = gap_analysis(max_qty, min_qty, 0)
+                            gap_summary.append({
+                                'Month': month,
+                                'Year': year,
+                                'Shape': shape,
+                                'Color': color,
+                                'Bucket': bucket,
+                                'Max Qty': max_qty,
+                                'Min Qty': min_qty,
+                                'Stock in Hand': stock_in_hand,
+                                'GAP Value': int(gap_value),
+                                'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate'
+                                })
+                            
     
     return pd.DataFrame(gap_summary).sort_values(by=['Shape','Color','Bucket'])
 
