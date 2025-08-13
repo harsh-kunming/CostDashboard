@@ -11,6 +11,7 @@ from utility import *
 import json
 import os
 from pathlib import Path
+import joblib
 
 # File history management functions
 def get_history_file_path():
@@ -363,6 +364,26 @@ def create_shape_key(x):
         return 'Other'
     else:
         return 'Other'
+def update_max_qty(df_max_qty,json_data_name = 'max_qty.pkl'): 
+    """
+    Update the max quantity for a specific month, bucket, shape, and color.
+    """
+    try:
+        json_data = joblib.load(json_data_name)
+    except:
+        json_data = {}
+    columns=list(concatenate_first_two_rows(df_max_qty.iloc[0:2,2:]).values())
+    columns = ['Months','Buckets'] + columns
+    df_max_qty.columns = columns
+    df_max_qty=df_max_qty.iloc[2:,:]
+    json_data = {}
+    for col in df_max_qty.columns[2:]:
+        json_data[col] = {}
+        for month in df_max_qty['Months'].unique():
+            json_data[col][month] = {}
+            for bucket in df_max_qty['Buckets'].unique():
+                json_data[col][month][bucket] = df_max_qty[(df_max_qty['Months'] == month) & (df_max_qty['Buckets']==bucket)][col].iloc[0]
+    joblib.dump(json_data, json_data_name)
 def poplutate_monthly_stock_sheet(file):
     """
     df_stock : Monthly Stock Data Sheet
@@ -376,7 +397,9 @@ def poplutate_monthly_stock_sheet(file):
     df_stock.rename(columns={'avg': 'Avg Cost Total'}, inplace=True)
     df_buying = df['Buying Max Prices']
     df_min_qty = df['MIN Data']
+    update_max_qty(df_min_qty, json_data_name='min_qty.pkl')
     df_max_qty = df['MAX Data']
+    update_max_qty(df_max_qty, json_data_name='max_qty.pkl')
     df_min_sp = df['Min Selling Price']
     if df_stock.empty or df_buying.empty or df_min_qty.empty or df_max_qty.empty:
         raise ValueError("One or more dataframes are empty. Please check the input files.")
@@ -499,6 +522,15 @@ def get_filtered_data(FILTER_MONTH,FILTE_YEAR,FILTER_SHAPE,FILTER_COLOR,FILTER_B
     max_qty = filter_data['Max Qty'].max()
     min_qty = filter_data['Min Qty'].min()
     stock_in_hand = filter_data.shape[0]
+    if stock_in_hand = 0:
+        max_qty_dict = joblib.load('max_qty.pkl')
+        min_qty_dict = joblib.load('min_qty.pkl')
+        filter_shape_color = FILTER_SHAPE + '_' + FILTER_COLOR
+        latest_month_max_qty_dict = list(max_qty_dict[filter_shape_color].keys())[-1]
+        latest_month_min_qty_dict = list(min_qty_dict[filter_shape_color].keys())[-1]
+        max_qty = max_qty_dict[filter_shape_color][latest_month_max_qty_dict][FILTER_BUCKET]
+        min_qty = min_qty_dict[filter_shape_color][latest_month_max_qty_dict][FILTER_BUCKET]
+        
     gap_analysis_op = gap_analysis(max_qty, min_qty, stock_in_hand)
     _filter_ = master_df[(master_df['Shape key'] == FILTER_SHAPE) &\
                                         (master_df['Color Key'] == FILTER_COLOR) &\
