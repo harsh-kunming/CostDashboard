@@ -592,8 +592,9 @@ def poplutate_monthly_stock_sheet(file):
         df_stock = populate_buying_prices(df_buying, df_stock)
         df_stock = calculate_buying_price_avg(df_stock)
         df_stock = populate_selling_prices(df_min_sp, df_stock)
-        df_stock = df_stock[~(df_stock['Color']=='U-v')]
+        df_stock = df_stock[~(df_stock['Color']=='U-V')]
         df_stock = df_stock[~(df_stock['Weight']<.5)]
+        df_stock = df_stock[~(df_stock['Shape key']=='Other')]
         df_stock.reset_index(drop=True,inplace=True)
         df_stock.fillna(0, inplace=True)
         cols = df_stock.columns.tolist()
@@ -705,8 +706,9 @@ def get_filtered_data(FILTER_MONTH, FILTER_YEAR, FILTER_SHAPE, FILTER_COLOR, FIL
     """Get filtered data with enhanced error handling"""
     try:
         master_df = load_data('kunmings.pkl')
-        master_df = master_df[~(master_df['Color']=='U-v')]
+        master_df = master_df[~(master_df['Color']=='U-V')]
         master_df = master_df[~(master_df['Weight']<.5)]
+        master_df = master_df[~(master_df['Shape key']=='Other')]
         master_df.reset_index(drop=True,inplace=True)
         if master_df is None or master_df.empty:
             return [pd.DataFrame(), "No master data available", "No master data available", 0, 0]
@@ -769,9 +771,15 @@ def get_summary_metrics(filter_data, Filter_Month, FILTER_SHAPE, FILTER_YEAR, FI
     try:
         FILTER_YEAR = int(FILTER_YEAR)
         master_df = load_data('kunmings.pkl')
-        master_df = master_df[~(master_df['Color']=='U-v')]
+        master_df = master_df[~(master_df['Color']=='U-V')]
         master_df = master_df[~(master_df['Weight']<.5)]
+        master_df = master_df[~(master_df['Shape key']=='Other')]
         master_df.reset_index(drop=True,inplace=True)
+
+        filter_data = filter_data[~(filter_data['Color']=='U-V')]
+        filter_data = filter_data[~(filter_data['Weight']<.5)]
+        filter_data = filter_data[~(filter_data['Shape key']=='Other')]
+        filter_data.reset_index(drop=True,inplace=True)
 
         if master_df is None or master_df.empty:
             return [0, 0, 0]
@@ -877,8 +885,9 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
             return pd.DataFrame()
         
         gap_summary = []
-        master_df = master_df[~(master_df['Color']=='U-v')]
+        master_df = master_df[~(master_df['Color']=='U-V')]
         master_df = master_df[~(master_df['Weight']<.5)]
+        master_df = master_df[~(master_df['Shape key']=='Other')]
         master_df.reset_index(drop=True,inplace=True)
 
         # Get unique values for each filter
@@ -986,8 +995,11 @@ def get_final_data(file, PARENT_DF='kunmings.pkl'):
         
         cols = master_df.columns.tolist()
         master_df = master_df.groupby(['Product Id', 'Year', 'Month']).first().reset_index().loc[:, cols]
-        master_df = master_df[~(master_df['Color']=='U-v')]
+        master_df = master_df[~(master_df['Color']=='U-V')]
         master_df = master_df[~(master_df['Weight']<.5)]
+        master_df = master_df[~(master_df['Shape key']=='Other')]
+        master_df.reset_index(drop=True,inplace=True)
+
         master_df.reset_index(drop=True,inplace=True)
 
         save_data(master_df)
@@ -1718,8 +1730,9 @@ def main():
                     st.session_state.master_df = get_final_data(uploaded_file)
                     cols = st.session_state.master_df.columns.tolist()
                     st.session_state.master_df = st.session_state.master_df.groupby(['Product Id', 'Year', 'Month']).first().reset_index().loc[:, cols]
-                    st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Color']=='U-v')]
+                    st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Color']=='U-V')]
                     st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Weight']<.5)]
+                    st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Shape key']=='Other')]
                     st.session_state.master_df.reset_index(drop=True,inplace=True)
 
                     st.session_state.data_processed = True
