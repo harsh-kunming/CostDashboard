@@ -2053,10 +2053,10 @@ def main():
                         # Download GAP Summary
                         st.subheader("💾 Download GAP Summary")
                         try:
-                            gap_summary_df_cols = ['Month', 'Year', 'Shape', 'Color', 'Bucket', 'GAP Value']
-                            gap_csv = gap_summary_df.loc[:, gap_summary_df_cols].to_csv(index=False)
-                            gap_csv_excess = gap_summary_df[gap_summary_df['Status'] == 'Excess'].loc[:, gap_summary_df_cols+['min_selling_price']].to_csv(index=False)
-                            gap_csv_need = gap_summary_df[gap_summary_df['Status'] == 'Need'].loc[:, gap_summary_df_cols].to_csv(index=False)
+                            gap_summary_df_cols = ['Month', 'Year', 'Shape', 'Color', 'Bucket', 'GAP Value','min_selling_price']
+                            gap_csv = gap_summary_df.loc[:, gap_summary_df_cols[:-1]].to_csv(index=False)
+                            gap_csv_excess = gap_summary_df[gap_summary_df['Status'] == 'Excess'].loc[:, gap_summary_df_cols].to_csv(index=False)
+                            gap_csv_need = gap_summary_df[gap_summary_df['Status'] == 'Need'].loc[:, gap_summary_df_cols[:-1]].to_csv(index=False)
                             
                             col_gap1, col_gap2, col_gap3 = st.columns(3)
                             
