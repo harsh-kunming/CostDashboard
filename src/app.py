@@ -592,7 +592,9 @@ def poplutate_monthly_stock_sheet(file):
         df_stock = populate_buying_prices(df_buying, df_stock)
         df_stock = calculate_buying_price_avg(df_stock)
         df_stock = populate_selling_prices(df_min_sp, df_stock)
-        
+        df_stock = df_stock[~(df_stock['Color']=='U-v')]
+        df_stock = df_stock[~(df_stock['Weight']<.5)]
+        df_stock.reset_index(drop=True,inplace=True)
         df_stock.fillna(0, inplace=True)
         cols = df_stock.columns.tolist()
         df_stock = df_stock.groupby(['Product Id', 'Year', 'Month']).first().reset_index().loc[:, cols]
@@ -703,6 +705,9 @@ def get_filtered_data(FILTER_MONTH, FILTER_YEAR, FILTER_SHAPE, FILTER_COLOR, FIL
     """Get filtered data with enhanced error handling"""
     try:
         master_df = load_data('kunmings.pkl')
+        master_df = master_df[~(master_df['Color']=='U-v')]
+        master_df = master_df[~(master_df['Weight']<.5)]
+        master_df.reset_index(drop=True,inplace=True)
         if master_df is None or master_df.empty:
             return [pd.DataFrame(), "No master data available", "No master data available", 0, 0]
         
@@ -764,7 +769,10 @@ def get_summary_metrics(filter_data, Filter_Month, FILTER_SHAPE, FILTER_YEAR, FI
     try:
         FILTER_YEAR = int(FILTER_YEAR)
         master_df = load_data('kunmings.pkl')
-        
+        master_df = master_df[~(master_df['Color']=='U-v')]
+        master_df = master_df[~(master_df['Weight']<.5)]
+        master_df.reset_index(drop=True,inplace=True)
+
         if master_df is None or master_df.empty:
             return [0, 0, 0]
         
@@ -869,7 +877,10 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
             return pd.DataFrame()
         
         gap_summary = []
-        
+        master_df = master_df[~(master_df['Color']=='U-v')]
+        master_df = master_df[~(master_df['Weight']<.5)]
+        master_df.reset_index(drop=True,inplace=True)
+
         # Get unique values for each filter
         months = [selected_month] if selected_month != "None" else list(master_df['Month'].unique())
         years = [selected_year] if selected_year != "None" else list(master_df['Year'].unique())
@@ -898,7 +909,7 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                     min_qty = int(filtered_data['Min Qty'].min())
                                     stock_in_hand = filtered_data.shape[0]
                                     gap_value = gap_analysis(max_qty, min_qty, stock_in_hand)
-                                    
+                                    min_selling_price = int(filtered_data['Min Selling Price'].max())
                                     gap_summary.append({
                                         'Month': month,
                                         'Year': year,
@@ -910,6 +921,7 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                         'Stock in Hand': stock_in_hand,
                                         'GAP Value': int(gap_value),
                                         'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate'
+                                        'Min Selling Price' : min_selling_price
                                     })
                                 else:
                                     # Try to get from saved dictionaries
@@ -974,6 +986,10 @@ def get_final_data(file, PARENT_DF='kunmings.pkl'):
         
         cols = master_df.columns.tolist()
         master_df = master_df.groupby(['Product Id', 'Year', 'Month']).first().reset_index().loc[:, cols]
+        master_df = master_df[~(master_df['Color']=='U-v')]
+        master_df = master_df[~(master_df['Weight']<.5)]
+        master_df.reset_index(drop=True,inplace=True)
+
         save_data(master_df)
         
         return master_df
@@ -1702,6 +1718,10 @@ def main():
                     st.session_state.master_df = get_final_data(uploaded_file)
                     cols = st.session_state.master_df.columns.tolist()
                     st.session_state.master_df = st.session_state.master_df.groupby(['Product Id', 'Year', 'Month']).first().reset_index().loc[:, cols]
+                    st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Color']=='U-v')]
+                    st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Weight']<.5)]
+                    st.session_state.master_df.reset_index(drop=True,inplace=True)
+
                     st.session_state.data_processed = True
                     
                     # Add to upload history after successful processing
@@ -2035,7 +2055,7 @@ def main():
                         try:
                             gap_summary_df_cols = ['Month', 'Year', 'Shape', 'Color', 'Bucket', 'GAP Value']
                             gap_csv = gap_summary_df.loc[:, gap_summary_df_cols].to_csv(index=False)
-                            gap_csv_excess = gap_summary_df[gap_summary_df['Status'] == 'Excess'].loc[:, gap_summary_df_cols].to_csv(index=False)
+                            gap_csv_excess = gap_summary_df[gap_summary_df['Status'] == 'Excess'].loc[:, gap_summary_df_cols+['min_selling_price']].to_csv(index=False)
                             gap_csv_need = gap_summary_df[gap_summary_df['Status'] == 'Need'].loc[:, gap_summary_df_cols].to_csv(index=False)
                             
                             col_gap1, col_gap2, col_gap3 = st.columns(3)
