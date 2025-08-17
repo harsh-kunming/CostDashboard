@@ -2129,15 +2129,23 @@ def main():
                             hide_index=True
                         )
                         
-                        # Download GAP Summary
+                        # Enhanced Download GAP Summary with Conditional Buttons
                         st.subheader("💾 Download GAP Summary")
                         try:
                             gap_summary_df_cols = ['Month', 'Year', 'Shape', 'Color', 'Bucket', 'GAP Value','Min Selling Price']
                             
-                            # Apply consistent filters to GAP summary downloads
+                            # Filter data for excess and need
+                            gap_excess_df = gap_summary_df[gap_summary_df['Status'] == 'Excess']
+                            gap_need_df = gap_summary_df[gap_summary_df['Status'] == 'Need']
+                            
+                            # Check if data exists
+                            has_excess_data = not gap_excess_df.empty
+                            has_need_data = not gap_need_df.empty
+                            
+                            # Prepare CSV data
                             gap_csv = gap_summary_df.loc[:, gap_summary_df_cols[:-1]].to_csv(index=False)
-                            gap_csv_excess = gap_summary_df[gap_summary_df['Status'] == 'Excess'].loc[:, gap_summary_df_cols].to_csv(index=False)
-                            gap_csv_need = gap_summary_df[gap_summary_df['Status'] == 'Need'].loc[:, gap_summary_df_cols[:-1]+['Max Buying Price']].to_csv(index=False)
+                            gap_csv_excess = gap_excess_df.loc[:, gap_summary_df_cols].to_csv(index=False) if has_excess_data else ""
+                            gap_csv_need = gap_need_df.loc[:, gap_summary_df_cols[:-1]+['Max Buying Price']].to_csv(index=False) if has_need_data else ""
                             
                             col_gap1, col_gap2, col_gap3 = st.columns(3)
                             
@@ -2150,20 +2158,49 @@ def main():
                                 )
                             
                             with col_gap2:
+                                button_label = "Download GAP Excess Summary as CSV"
+                                if not has_excess_data:
+                                    button_label += " (No Data)"
+                                
                                 st.download_button(
-                                    label="Download GAP Excess Summary as CSV",
+                                    label=button_label,
                                     data=gap_csv_excess,
                                     file_name=f"gap_summary_excess_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv"
+                                    mime="text/csv",
+                                    disabled=not has_excess_data
                                 )
+                                if not has_excess_data:
+                                    st.caption("⚠️ No excess data available")
                             
                             with col_gap3:
+                                button_label = "Download GAP Need Summary as CSV"
+                                if not has_need_data:
+                                    button_label += " (No Data)"
+                                
                                 st.download_button(
-                                    label="Download GAP Need Summary as CSV",
+                                    label=button_label,
                                     data=gap_csv_need,
                                     file_name=f"gap_summary_need_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv"
+                                    mime="text/csv",
+                                    disabled=not has_need_data
                                 )
+                                if not has_need_data:
+                                    st.caption("⚠️ No need data available")
+                                    
+                            # Display summary statistics
+                            if has_excess_data or has_need_data:
+                                st.markdown("---")
+                                summary_col1, summary_col2, summary_col3 = st.columns(3)
+                                
+                                with summary_col1:
+                                    st.metric("Total Records", len(gap_summary_df))
+                                with summary_col2:
+                                    st.metric("Excess Records", len(gap_excess_df), 
+                                             help=f"Records with GAP Value > 0 ({'Available' if has_excess_data else 'No Data'})")
+                                with summary_col3:
+                                    st.metric("Need Records", len(gap_need_df), 
+                                             help=f"Records with GAP Value < 0 ({'Available' if has_need_data else 'No Data'})")
+                                             
                         except Exception as e:
                             st.error(f"Error preparing GAP summary downloads: {str(e)}")
                             logger.error(f"Error preparing GAP summary downloads: {e}")
