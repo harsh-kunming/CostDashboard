@@ -18,6 +18,43 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def apply_data_filters(df):
+    """
+    Apply consistent data filters to remove unwanted rows.
+    This function ensures all data displayed or downloaded follows the same filtering rules.
+    
+    Filters applied:
+    1. Remove rows where Color = 'U-V'
+    2. Remove rows where Weight < 0.5
+    3. Remove rows where Shape key = 'Other'
+    """
+    if df is None or df.empty:
+        return df
+    
+    try:
+        original_count = len(df)
+        
+        # Apply filters
+        if 'Color' in df.columns:
+            df = df[~(df['Color'] == 'U-V')]
+        if 'Weight' in df.columns:
+            df = df[~(df['Weight'] < 0.5)]
+        if 'Shape key' in df.columns:
+            df = df[~(df['Shape key'] == 'Other')]
+        
+        # Reset index after filtering
+        df = df.reset_index(drop=True)
+        
+        filtered_count = len(df)
+        if original_count != filtered_count:
+            logger.info(f"Data filtering: {original_count} -> {filtered_count} rows ({original_count - filtered_count} rows removed)")
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error applying data filters: {e}")
+        return df
+
 # File history management functions
 def get_history_file_path():
     """Get the path for the history JSON file"""
@@ -104,6 +141,8 @@ def load_master_dataset():
             if df is not None and not df.empty:
                 if 'Product Id' in df.columns:
                     df['Product Id'] = df['Product Id'].astype(str)
+                # Apply consistent filters
+                df = apply_data_filters(df)
                 return df
             else:
                 return pd.DataFrame()
@@ -175,8 +214,11 @@ def load_data(file):
         raise e
 
 def save_data(df):
-    """Save data with error handling"""
+    """Save data with error handling and consistent filtering"""
     try:
+        # Apply filters before saving
+        df = apply_data_filters(df)
+        
         # Create src directory if it doesn't exist
         Path("src").mkdir(exist_ok=True)
         df.to_pickle('src/kunmings.pkl')
@@ -592,11 +634,11 @@ def poplutate_monthly_stock_sheet(file):
         df_stock = populate_buying_prices(df_buying, df_stock)
         df_stock = calculate_buying_price_avg(df_stock)
         df_stock = populate_selling_prices(df_min_sp, df_stock)
-        df_stock = df_stock[~(df_stock['Color']=='U-V')]
-        df_stock = df_stock[~(df_stock['Weight']<.5)]
-        df_stock = df_stock[~(df_stock['Shape key']=='Other')]
-        df_stock.reset_index(drop=True,inplace=True)
+        
+        # Apply consistent filters
+        df_stock = apply_data_filters(df_stock)
         df_stock.fillna(0, inplace=True)
+        
         cols = df_stock.columns.tolist()
         df_stock = df_stock.groupby(['Product Id', 'Year', 'Month']).first().reset_index().loc[:, cols]
         
@@ -655,6 +697,9 @@ def monthly_variance(df, col):
         if df.empty or col not in df.columns:
             return pd.DataFrame()
         
+        # Apply filters before analysis
+        df = apply_data_filters(df)
+        
         analysis = df.groupby(['Month', 'Year'], as_index=False)[col].sum()
         
         if analysis.empty:
@@ -706,10 +751,10 @@ def get_filtered_data(FILTER_MONTH, FILTER_YEAR, FILTER_SHAPE, FILTER_COLOR, FIL
     """Get filtered data with enhanced error handling"""
     try:
         master_df = load_data('kunmings.pkl')
-        master_df = master_df[~(master_df['Color']=='U-V')]
-        master_df = master_df[~(master_df['Weight']<.5)]
-        master_df = master_df[~(master_df['Shape key']=='Other')]
-        master_df.reset_index(drop=True,inplace=True)
+        
+        # Apply consistent filters
+        master_df = apply_data_filters(master_df)
+        
         if master_df is None or master_df.empty:
             return [pd.DataFrame(), "No master data available", "No master data available", 0, 0]
         
@@ -771,15 +816,10 @@ def get_summary_metrics(filter_data, Filter_Month, FILTER_SHAPE, FILTER_YEAR, FI
     try:
         FILTER_YEAR = int(FILTER_YEAR)
         master_df = load_data('kunmings.pkl')
-        master_df = master_df[~(master_df['Color']=='U-V')]
-        master_df = master_df[~(master_df['Weight']<.5)]
-        master_df = master_df[~(master_df['Shape key']=='Other')]
-        master_df.reset_index(drop=True,inplace=True)
-
-        filter_data = filter_data[~(filter_data['Color']=='U-V')]
-        filter_data = filter_data[~(filter_data['Weight']<.5)]
-        filter_data = filter_data[~(filter_data['Shape key']=='Other')]
-        filter_data.reset_index(drop=True,inplace=True)
+        
+        # Apply consistent filters
+        master_df = apply_data_filters(master_df)
+        filter_data = apply_data_filters(filter_data)
 
         if master_df is None or master_df.empty:
             return [0, 0, 0]
@@ -884,11 +924,10 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
         if master_df.empty:
             return pd.DataFrame()
         
+        # Apply consistent filters
+        master_df = apply_data_filters(master_df)
+        
         gap_summary = []
-        master_df = master_df[~(master_df['Color']=='U-V')]
-        master_df = master_df[~(master_df['Weight']<.5)]
-        master_df = master_df[~(master_df['Shape key']=='Other')]
-        master_df.reset_index(drop=True,inplace=True)
 
         # Get unique values for each filter
         months = [selected_month] if selected_month != "None" else list(master_df['Month'].unique())
@@ -988,6 +1027,10 @@ def get_final_data(file, PARENT_DF='kunmings.pkl'):
         df = poplutate_monthly_stock_sheet(file)
         parent_df = load_data(PARENT_DF)
         
+        # Apply consistent filters to parent data
+        if parent_df is not None and not parent_df.empty:
+            parent_df = apply_data_filters(parent_df)
+        
         if parent_df is None or parent_df.empty:
             master_df = df
         else:
@@ -995,12 +1038,9 @@ def get_final_data(file, PARENT_DF='kunmings.pkl'):
         
         cols = master_df.columns.tolist()
         master_df = master_df.groupby(['Product Id', 'Year', 'Month']).first().reset_index().loc[:, cols]
-        master_df = master_df[~(master_df['Color']=='U-V')]
-        master_df = master_df[~(master_df['Weight']<.5)]
-        master_df = master_df[~(master_df['Shape key']=='Other')]
-        master_df.reset_index(drop=True,inplace=True)
-
-        master_df.reset_index(drop=True,inplace=True)
+        
+        # Apply consistent filters
+        master_df = apply_data_filters(master_df)
 
         save_data(master_df)
         
@@ -1049,6 +1089,9 @@ def create_trend_visualization(master_df, selected_shape=None, selected_color=No
                 showarrow=False, font=dict(size=16)
             )
             return fig
+        
+        # Apply consistent filters
+        master_df = apply_data_filters(master_df)
         
         # Filter data based on selections
         filtered_df = master_df.copy()
@@ -1318,6 +1361,9 @@ def create_summary_charts(master_df, selected_shape, selected_color, selected_bu
                 showarrow=False, font=dict(size=16)
             )
             return fig
+        
+        # Apply consistent filters
+        master_df = apply_data_filters(master_df)
         
         # Group data first to avoid duplicates
         cols = master_df.columns.tolist()
@@ -1728,12 +1774,11 @@ def main():
                     # Process the file
                     st.subheader("🗄️ Updating Master Database")
                     st.session_state.master_df = get_final_data(uploaded_file)
+                    
+                    # Apply consistent filters and grouping
                     cols = st.session_state.master_df.columns.tolist()
                     st.session_state.master_df = st.session_state.master_df.groupby(['Product Id', 'Year', 'Month']).first().reset_index().loc[:, cols]
-                    st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Color']=='U-V')]
-                    st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Weight']<.5)]
-                    st.session_state.master_df = st.session_state.master_df[~(st.session_state.master_df['Shape key']=='Other')]
-                    st.session_state.master_df.reset_index(drop=True,inplace=True)
+                    st.session_state.master_df = apply_data_filters(st.session_state.master_df)
 
                     st.session_state.data_processed = True
                     
@@ -1772,6 +1817,9 @@ def main():
         # Show dashboard if master_df has data (regardless of upload)
         if not st.session_state.master_df.empty:
             try:
+                # Apply consistent filters to master data
+                st.session_state.master_df = apply_data_filters(st.session_state.master_df)
+                
                 # Create filter columns
                 Month, Year, Shape, Color, Bucket, Variance_Column = st.columns(6)
                 
@@ -1816,6 +1864,9 @@ def main():
                     display_df = display_df[display_df['Color Key'] == selected_color]
                 if selected_bucket != "None":
                     display_df = display_df[display_df['Buckets'] == selected_bucket]
+                
+                # Apply consistent filters to display data
+                display_df = apply_data_filters(display_df)
                 
                 # Display summary metrics
                 st.subheader("📊 Summary Metrics")
@@ -1977,11 +2028,15 @@ def main():
                 
                 # Data Table and Downloads
                 st.subheader("📊 Data Table")
-                cols = display_df.columns.tolist()
-                display_df = display_df.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
+                
+                # Apply consistent filters before displaying
+                display_df_filtered = apply_data_filters(display_df)
+                cols = display_df_filtered.columns.tolist()
+                display_df_filtered = display_df_filtered.groupby(['Product Id','Year', 'Month']).first().reset_index().loc[:,cols]
+                
                 try:
                     st.dataframe(
-                        display_df,
+                        display_df_filtered,
                         use_container_width=True,
                         hide_index=True
                     )
@@ -1995,11 +2050,15 @@ def main():
                 with col1:
                     st.subheader("💾 Download Filtered Data")
                     try:
-                        if 'Product Id' in display_df.columns:
+                        if 'Product Id' in display_df_filtered.columns:
                             download_columns = ['Product Id', 'Shape key', 'Color Key', 'Avg Cost Total',
                                               'Min Qty', 'Max Qty', 'Buying Price Avg', 'Max Buying Price']
-                            available_columns = [col for col in download_columns if col in display_df.columns]
-                            csv = display_df.loc[:, available_columns].to_csv(index=False)
+                            available_columns = [col for col in download_columns if col in display_df_filtered.columns]
+                            
+                            # Apply filters to download data
+                            download_df = apply_data_filters(display_df_filtered.loc[:, available_columns])
+                            csv = download_df.to_csv(index=False)
+                            
                             st.download_button(
                                 label="Download Filtered Data as CSV",
                                 data=csv,
@@ -2013,7 +2072,10 @@ def main():
                 with col2:
                     st.subheader("💾 Download Master Data")
                     try:
-                        csv = st.session_state.master_df.to_csv(index=False)
+                        # Apply filters to master data download
+                        master_filtered = apply_data_filters(st.session_state.master_df)
+                        csv = master_filtered.to_csv(index=False)
+                        
                         st.download_button(
                             label="Download Master Data as CSV",
                             data=csv,
@@ -2067,6 +2129,8 @@ def main():
                         st.subheader("💾 Download GAP Summary")
                         try:
                             gap_summary_df_cols = ['Month', 'Year', 'Shape', 'Color', 'Bucket', 'GAP Value','Min Selling Price']
+                            
+                            # Apply consistent filters to GAP summary downloads
                             gap_csv = gap_summary_df.loc[:, gap_summary_df_cols[:-1]].to_csv(index=False)
                             gap_csv_excess = gap_summary_df[gap_summary_df['Status'] == 'Excess'].loc[:, gap_summary_df_cols].to_csv(index=False)
                             gap_csv_need = gap_summary_df[gap_summary_df['Status'] == 'Need'].loc[:, gap_summary_df_cols[:-1]].to_csv(index=False)
