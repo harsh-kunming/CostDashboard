@@ -958,6 +958,7 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                     stock_in_hand = filtered_data.shape[0]
                                     gap_value = gap_analysis(max_qty, min_qty, stock_in_hand)
                                     min_selling_price = int(filtered_data['Min Selling Price'].max())
+                                    max_buying_price = int(filtered_data['Max Buying Price'].max())
                                     gap_summary.append({
                                         'Month': month,
                                         'Year': year,
@@ -969,7 +970,8 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                         'Stock in Hand': stock_in_hand,
                                         'GAP Value': int(gap_value),
                                         'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate',
-                                        'Min Selling Price' : min_selling_price
+                                        'Min Selling Price' : min_selling_price,
+                                        'Max Buying Price' : max_buying_price
                                     })
                                 else:
                                     # Try to get from saved dictionaries
@@ -2133,7 +2135,7 @@ def main():
                             # Apply consistent filters to GAP summary downloads
                             gap_csv = gap_summary_df.loc[:, gap_summary_df_cols[:-1]].to_csv(index=False)
                             gap_csv_excess = gap_summary_df[gap_summary_df['Status'] == 'Excess'].loc[:, gap_summary_df_cols].to_csv(index=False)
-                            gap_csv_need = gap_summary_df[gap_summary_df['Status'] == 'Need'].loc[:, gap_summary_df_cols[:-1]].to_csv(index=False)
+                            gap_csv_need = gap_summary_df[gap_summary_df['Status'] == 'Need'].loc[:, gap_summary_df_cols[:-1]+['Max Buying Price']].to_csv(index=False)
                             
                             col_gap1, col_gap2, col_gap3 = st.columns(3)
                             
