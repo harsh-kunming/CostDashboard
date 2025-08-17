@@ -920,7 +920,7 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                         'Min Qty': min_qty,
                                         'Stock in Hand': stock_in_hand,
                                         'GAP Value': int(gap_value),
-                                        'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate'
+                                        'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate',
                                         'Min Selling Price' : min_selling_price
                                     })
                                 else:
