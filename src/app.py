@@ -620,7 +620,7 @@ def poplutate_monthly_stock_sheet(file):
         df_max_qty = df['MAX Data']
         update_max_qty(df_max_qty, json_data_name='max_qty.pkl')
         df_min_sp = df['Min Selling Price']
-        
+        update_max_qty(df_buying,json_data_name='max_buy.pkl')
         if any(sheet_df.empty for sheet_df in [df_stock, df_buying, df_min_qty, df_max_qty]):
             raise ValueError("One or more dataframes are empty. Please check the input files.")
         
@@ -980,6 +980,7 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                     try:
                                         max_qty_dict = joblib.load('src/max_qty.pkl')
                                         min_qty_dict = joblib.load('src/min_qty.pkl')
+                                        max_buy_dict = joblib.load('src/max_buy.pkl')
                                         filter_shape_color = f"{shape}_{color}"
                                         
                                         if filter_shape_color in max_qty_dict:
@@ -993,7 +994,11 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                             min_qty = min_qty_dict[filter_shape_color][latest_month].get(bucket, 0)
                                         else:
                                             min_qty = 0
-                                        
+                                        if filter_shape_color in max_buy_dict:
+                                            latest_month = list(max_buy_dict[filter_shape_color].keys())[-1]
+                                            max_buy = max_buy_dict[filter_shape_color][latest_month].get(bucket,0)
+                                        else:
+                                            max_buy = 0
                                         gap_value = gap_analysis(max_qty, min_qty, 0)
                                         
                                         gap_summary.append({
@@ -1006,7 +1011,8 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                             'Min Qty': min_qty,
                                             'Stock in Hand': 0,
                                             'GAP Value': int(gap_value),
-                                            'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate'
+                                            'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate',
+                                            'Max Buying Price' : max_buy
                                         })
                                     except Exception as e2:
                                         logger.error(f"Error loading qty dictionaries for {shape}_{color}: {e2}")
