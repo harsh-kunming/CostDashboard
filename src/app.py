@@ -37,11 +37,13 @@ def apply_data_filters(df):
         # Apply filters
         if 'Color' in df.columns:
             df = df[~(df['Color'] == 'U-V')]
+            df = df[~(df['Color'] == 'S-T')]
+            df = df[~(df['Color'] == 'Fancy Deep Yellow')]
         if 'Weight' in df.columns:
             df = df[~(df['Weight'] < 0.5)]
         if 'Shape key' in df.columns:
             df = df[~(df['Shape key'] == 'Other')]
-        
+            
         # Reset index after filtering
         df = df.reset_index(drop=True)
         
