@@ -132,14 +132,14 @@ def display_upload_history():
 
 def check_master_dataset_exists():
     """Check if the master dataset (kunmings.pkl) exists"""
-    master_file_path = Path("src/kunmings.pkl")
+    master_file_path = Path(r"C:\streamlit-app\src\kunmings.pkl")
     return master_file_path.exists()
 
 def load_master_dataset():
     """Load the master dataset if it exists"""
     try:
         if check_master_dataset_exists():
-            df = load_data('kunmings.pkl')
+            df = load_data(r'C:\streamlit-app\src\kunmings.pkl')
             if df is not None and not df.empty:
                 if 'Product Id' in df.columns:
                     df['Product Id'] = df['Product Id'].astype(str)
@@ -168,7 +168,7 @@ def load_data(file):
                     df['Product Id'] = df['Product Id'].astype(str)
                 return df
             elif file_type == 'pkl':
-                df = pd.read_pickle(f"src/{file}")
+                df = pd.read_pickle(f"{file}")
                 if df is not None and not df.empty:
                     if 'Product Id' in df.columns:
                         df['Product Id'] = df['Product Id'].astype(str)
@@ -199,7 +199,7 @@ def load_data(file):
                         df_dict[sheet_name] = df_
                 return df_dict
             elif file_type == 'pkl':
-                df = pd.read_pickle(f"src/{file}")
+                df = pd.read_pickle(rf"C:\streamlit-app\src\{file}")
                 if df is not None and not df.empty:
                     if 'Product Id' in df.columns:
                         df['Product Id'] = df['Product Id'].astype(str)
@@ -223,7 +223,7 @@ def save_data(df):
         
         # Create src directory if it doesn't exist
         Path("src").mkdir(exist_ok=True)
-        df.to_pickle('src/kunmings.pkl')
+        df.to_pickle(r'C:\streamlit-app\src\kunmings.pkl')
         logger.info("Data saved successfully")
     except Exception as e:
         logger.error(f"Error saving data: {e}")
@@ -564,7 +564,7 @@ def create_shape_key(x):
 def update_max_qty(df_max_qty, json_data_name='max_qty.pkl'): 
     """Update max qty with enhanced error handling"""
     try:
-        json_data_name = 'src/' + json_data_name
+        json_data_name = rf"C:\streamlit-app\src\{json_data_name}" 
         try:
             json_data = joblib.load(json_data_name)
         except:
@@ -780,8 +780,9 @@ def get_filtered_data(FILTER_MONTH, FILTER_YEAR, FILTER_SHAPE, FILTER_COLOR, FIL
         
         if stock_in_hand == 0:
             try:
-                max_qty_dict = joblib.load('src/max_qty.pkl')
-                min_qty_dict = joblib.load('src/min_qty.pkl')
+                max_qty_dict = joblib.load(r'C:\streamlit-app\src\max_qty.pkl')
+                min_qty_dict = joblib.load(r'C:\streamlit-app\src\min_qty.pkl')
+                max_buy_dict = joblib.load(r'C:\streamlit-app\src\max_buy.pkl')
                 filter_shape_color = f"{FILTER_SHAPE}_{FILTER_COLOR}"
                 
                 if filter_shape_color in max_qty_dict:
@@ -791,9 +792,13 @@ def get_filtered_data(FILTER_MONTH, FILTER_YEAR, FILTER_SHAPE, FILTER_COLOR, FIL
                 if filter_shape_color in min_qty_dict:
                     latest_month_min = list(min_qty_dict[filter_shape_color].keys())[-1]
                     min_qty = min_qty_dict[filter_shape_color][latest_month_min].get(FILTER_BUCKET, 0)
+                
+                if filter_shape_color in max_buy_dict:
+                    latest_month_min = list(max_buy_dict[filter_shape_color].keys())[-1]
+                    max_buying_price = max_buy_dict[filter_shape_color][latest_month_min].get(FILTER_BUCKET, 0)
             except Exception as e:
                 logger.error(f"Error loading qty dictionaries: {e}")
-                max_qty, min_qty = 0, 0
+                max_qty, min_qty , max_buying_price = 0, 0, 0
         
         gap_analysis_op = gap_analysis(max_qty, min_qty, stock_in_hand)
         
@@ -806,7 +811,7 @@ def get_filtered_data(FILTER_MONTH, FILTER_YEAR, FILTER_SHAPE, FILTER_COLOR, FIL
             return [filter_data, int(max_buying_price), int(current_avg_cost), gap_analysis_op, min_selling_price]
         else:
             empty_df = pd.DataFrame(columns=master_df.columns.tolist())
-            return [empty_df, f"No data for filters", f"No data for filters", gap_analysis_op, 0]
+            return [empty_df, int(max_buying_price), f"No data for filters", gap_analysis_op, 0]
             
     except Exception as e:
         logger.error(f"Error getting filtered data: {e}")
@@ -978,9 +983,9 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
                                 else:
                                     # Try to get from saved dictionaries
                                     try:
-                                        max_qty_dict = joblib.load('src/max_qty.pkl')
-                                        min_qty_dict = joblib.load('src/min_qty.pkl')
-                                        max_buy_dict = joblib.load('src/max_buy.pkl')
+                                        max_qty_dict = joblib.load(r"C:\streamlit-app\src\max_buy.pkl")
+                                        min_qty_dict = joblib.load(r'C:\streamlit-app\src\min_qty.pkl')
+                                        max_buy_dict = joblib.load(r'C:\streamlit-app\src\max_buy.pkl')
                                         filter_shape_color = f"{shape}_{color}"
                                         
                                         if filter_shape_color in max_qty_dict:
@@ -1892,7 +1897,7 @@ def main():
                         
                         mbp, cac, mom_var, mom_perc, qoq_perc, GAP, msp = st.columns(7)
                         
-                        if isinstance(max_buying_price, (int, float)):
+                        if isinstance(max_buying_price, (int, float)) & isinstance(current_avg_cost,(int,float)):
                             with GAP:
                                 st.metric("Gap Analysis", value=gap_output, 
                                          help=f"{'Excess' if gap_output > 0 else 'Need' if gap_output < 0 else 'Enough'}")
@@ -1915,7 +1920,7 @@ def main():
                                 st.metric("Gap Analysis", value=gap_output, 
                                          help=f"{'Excess' if gap_output > 0 else 'Need' if gap_output < 0 else 'Enough'}")
                             with mbp:
-                                st.metric("Max Buying Price", "0")
+                                st.metric("Max Buying Price", f"${max_buying_price:,.2f}")
                             with msp:
                                 st.metric("Min Selling Price", "0")
                             with cac:
