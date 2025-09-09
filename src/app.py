@@ -49,7 +49,7 @@ def initialize_session_state():
 def load_cached_master_dataset():
     """Load master dataset with proper compression handling"""
     try:
-        master_file_path = Path(r"C:\Users\himabirla\Downloads\CostDashboard-main (3)\CostDashboard-main\src\kunmings.pkl")
+        master_file_path = Path(r"C:\streamlit-app\src\kunmings.pkl")
         if master_file_path.exists():
             # Try loading with compression first (for files saved with gzip)
             try:
@@ -132,9 +132,9 @@ def apply_data_filters(df):
 def load_qty_dictionaries():
     """Cache loading of quantity dictionaries"""
     try:
-        max_qty_dict = joblib.load(r'C:\Users\himabirla\Downloads\CostDashboard-main (3)\CostDashboard-main\src\max_qty.pkl')
-        min_qty_dict = joblib.load(r'C:\Users\himabirla\Downloads\CostDashboard-main (3)\CostDashboard-main\src\min_qty.pkl')
-        max_buy_dict = joblib.load(r'C:\Users\himabirla\Downloads\CostDashboard-main (3)\CostDashboard-main\src\max_buy.pkl')
+        max_qty_dict = joblib.load(r'C:\streamlit-app\src\max_qty.pkl')
+        min_qty_dict = joblib.load(r'C:\streamlit-app\src\min_qty.pkl')
+        max_buy_dict = joblib.load(r'C:\streamlit-app\src\max_buy.pkl')
         return max_qty_dict, min_qty_dict, max_buy_dict
     except Exception as e:
         logger.error(f"Error loading qty dictionaries: {e}")
@@ -439,7 +439,7 @@ def concatenate_first_two_rows(df):
 def update_max_qty(df_max_qty, json_data_name='max_qty.pkl'):
     """Stable max qty update with error handling"""
     try:
-        json_data_path = rf"C:\Users\himabirla\Downloads\CostDashboard-main (3)\CostDashboard-main\src\{json_data_name}"
+        json_data_path = rf"C:\streamlit-app\src\{json_data_name}"
         
         # Try to load existing data
         try:
@@ -483,6 +483,8 @@ def update_max_qty(df_max_qty, json_data_name='max_qty.pkl'):
 def populate_max_qty(df, MONTHLY_STOCK_DATA):
     """Stable max qty population"""
     try:
+        drop_cols = df.isna().sum()[df.isna().sum()>len(df)*.8].index.tolist()
+        df.drop(columns=drop_cols,inplace=True)
         columns = list(concatenate_first_two_rows(df.iloc[0:2, 2:]).values())
         columns = ['Months', 'Buckets'] + columns
         df.columns = columns
@@ -527,10 +529,12 @@ def populate_max_qty(df, MONTHLY_STOCK_DATA):
 def populate_min_qty(df, MONTHLY_STOCK_DATA):
     """Stable min qty population"""
     try:
+        drop_cols = df.isna().sum()[df.isna().sum()>len(df)*.8].index.tolist()
+        df.drop(columns=drop_cols,inplace=True)
         columns = list(concatenate_first_two_rows(df.iloc[0:2, 2:]).values())
         columns = ['Months', 'Buckets'] + columns
         df.columns = columns
-        df = df.iloc[2:].reset_index(drop=True)
+        df = df.iloc[2:,:].reset_index(drop=True)
         
         min_qty_values = []
         
@@ -571,10 +575,12 @@ def populate_min_qty(df, MONTHLY_STOCK_DATA):
 def populate_buying_prices(df, MONTHLY_STOCK_DATA):
     """Stable buying price population"""
     try:
+        drop_cols = df.isna().sum()[df.isna().sum()>len(df)*.8].index.tolist()
+        df.drop(columns=drop_cols,inplace=True)
         columns = list(concatenate_first_two_rows(df.iloc[0:2, 2:]).values())
         columns = ['Months', 'Buckets'] + columns
         df.columns = columns
-        df = df.iloc[2:].reset_index(drop=True)
+        df = df.iloc[2:,:].reset_index(drop=True)
         
         buying_price_values = []
         
@@ -615,6 +621,8 @@ def populate_buying_prices(df, MONTHLY_STOCK_DATA):
 def populate_selling_prices(df, MONTHLY_STOCK_DATA):
     """Stable selling price population"""
     try:
+        drop_cols = df.isna().sum()[df.isna().sum()>len(df)*.8].index.tolist()
+        df.drop(columns=drop_cols,inplace=True)
         columns = list(concatenate_first_two_rows(df.iloc[0:2, 1:]).values())
         columns = ['Buckets'] + columns
         df.columns = columns
@@ -904,7 +912,7 @@ def optimized_save_data(df):
         # Ensure directory exists
         Path("src").mkdir(exist_ok=True)
         
-        file_path = r'C:\Users\himabirla\Downloads\CostDashboard-main (3)\CostDashboard-main\src\kunmings.pkl'
+        file_path = r'C:\streamlit-app\src\kunmings.pkl'
         
         # Save with consistent compression (or without compression for compatibility)
         df.to_pickle(file_path, compression=None)  # Changed to None for compatibility
@@ -1309,7 +1317,7 @@ def main():
                     # Add recovery option
                     if st.button("Clear Corrupted Database"):
                         try:
-                            corrupted_file = Path(r"C:\Users\himabirla\Downloads\CostDashboard-main (3)\CostDashboard-main\src\kunmings.pkl")
+                            corrupted_file = Path(r"C:\streamlit-app\src\kunmings.pkl")
                             if corrupted_file.exists():
                                 corrupted_file.unlink()
                                 st.success("Corrupted database cleared. Please upload a new file.")
