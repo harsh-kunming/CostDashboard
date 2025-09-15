@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Optional, List, Tuple
 from datetime import datetime
+from dataclasses import dataclass
 from io import BytesIO
 import streamlit as st
 import plotly.express as px
@@ -370,7 +371,8 @@ def display_trend_analysis_section(master_df):
                 min_value=1,
                 max_value=12,
                 value=5,
-                help="Minimum months of activity for fast-moving classification"
+                help="Minimum months of activity for fast-moving classification",
+                key="trend_min_activity_months"
             )
         
         with col2:
@@ -380,7 +382,8 @@ def display_trend_analysis_section(master_df):
                 max_value=100000,
                 value=3000,
                 step=500,
-                help="Minimum average cost threshold"
+                help="Minimum average cost threshold",
+                key="trend_min_avg_cost"
             )
         
         with col3:
@@ -390,7 +393,8 @@ def display_trend_analysis_section(master_df):
                 max_value=1000000,
                 value=10000,
                 step=1000,
-                help="Minimum total value threshold"
+                help="Minimum total value threshold",
+                key="trend_min_total_value"
             )
         
         with col4:
@@ -400,7 +404,8 @@ def display_trend_analysis_section(master_df):
                 max_value=1.0,
                 value=0.2,
                 step=0.05,
-                help="Price volatility threshold (0-1)"
+                help="Price volatility threshold (0-1)",
+                key="trend_price_volatility"
             )
         
         # Store criteria in session state
@@ -482,31 +487,36 @@ def display_trend_analysis_section(master_df):
             with col1:
                 shape_filter = st.selectbox(
                     "Filter by Shape",
-                    ['All'] + sorted(df_analysis['Primary_Shape'].unique().tolist())
+                    ['All'] + sorted(df_analysis['Primary_Shape'].unique().tolist()),
+                    key="trend_detail_shape_filter"
                 )
             
             with col2:
                 color_filter = st.selectbox(
                     "Filter by Color",
-                    ['All'] + sorted(df_analysis['Primary_Color'].unique().tolist())
+                    ['All'] + sorted(df_analysis['Primary_Color'].unique().tolist()),
+                    key="trend_detail_color_filter"
                 )
             
             with col3:
                 bucket_filter = st.selectbox(
                     "Filter by Bucket",
-                    ['All'] + sorted(df_analysis['Primary_Bucket'].unique().tolist())
+                    ['All'] + sorted(df_analysis['Primary_Bucket'].unique().tolist()),
+                    key="trend_detail_bucket_filter"
                 )
             
             with col4:
                 category_filter = st.selectbox(
                     "Filter by Category",
-                    ['All', 'Fast Moving', 'Moderate Moving', 'Slow Moving']
+                    ['All', 'Fast Moving', 'Moderate Moving', 'Slow Moving'],
+                    key="trend_detail_category_filter"
                 )
             
             with col5:
                 trend_filter = st.selectbox(
                     "Filter by Price Trend",
-                    ['All', 'Upward', 'Downward', 'Stable', 'Insufficient Data']
+                    ['All', 'Upward', 'Downward', 'Stable', 'Insufficient Data'],
+                    key="trend_detail_trend_filter"
                 )
             
             # Apply filters
@@ -540,7 +550,8 @@ def display_trend_analysis_section(master_df):
                         min_value=min_val, 
                         max_value=max_val, 
                         value=default_val,
-                        step=10
+                        step=10,
+                        key="trend_detail_show_top_n"
                     )
                 else:
                     show_top_n = 0
@@ -864,7 +875,937 @@ TOP 10 FAST MOVING PRODUCTS
 
 # ===== END OF STOCK TREND ANALYZER FUNCTIONS =====
 
-# ===== ADVANCED STOCK ANALYZER & RECOMMENDATIONS =====
+# ===== ADVANCED INVENTORY OPTIMIZATION SYSTEM =====
+
+# Check for optimization libraries
+try:
+    from scipy.optimize import linprog
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    logger.info("scipy not available, using basic optimization")
+
+@dataclass
+class OptimizationProduct:
+    """Data class for product information in optimization"""
+    product_id: str
+    current_qty: float
+    min_qty: float
+    max_qty: float
+    max_buying_price: float
+    min_selling_price: float
+    profit_per_unit: float
+    requires_restock: bool
+    shortage_qty: float
+    shape: str = ""
+    color: str = ""
+    bucket: str = ""
+    weight: float = 0.0
+    month: str = ""
+    year: int = 0
+
+class InventoryOptimizer:
+    """
+    Advanced optimization model for inventory purchase recommendations using linear programming
+    """
+    
+    def __init__(self, df: pd.DataFrame, budget: float = float('inf')):
+        """Initialize the optimizer with DataFrame and budget."""
+        self.budget = budget
+        self.df = self._prepare_dataframe(df)
+        self.products = []
+        self.optimization_result = None
+        
+    def _prepare_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare and validate the dataframe for optimization."""
+        df = df.copy()
+        
+        # Ensure required columns exist
+        required_cols = ['Product Id', 'Max Qty', 'Min Qty', 'Max Buying Price', 'Min Selling Price']
+        for col in required_cols:
+            if col not in df.columns:
+                logger.warning(f"Missing required column: {col}")
+                df[col] = 0
+        
+        # Convert to numeric
+        numeric_cols = ['Max Qty', 'Min Qty', 'Max Buying Price', 'Min Selling Price', 'Weight']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        # Add current quantity if not present (simulate as percentage of max)
+        if 'Current Qty' not in df.columns:
+            np.random.seed(42)
+            # Simulate current quantities - some products low, some adequate
+            df['Current Qty'] = df.apply(
+                lambda row: np.random.uniform(0, row['Max Qty'] * 0.8) 
+                if np.random.random() > 0.3 else np.random.uniform(0, row['Min Qty'] * 0.5),
+                axis=1
+            )
+        
+        return df
+    
+    def identify_restock_products(self, filters: Optional[Dict] = None) -> List[OptimizationProduct]:
+        """
+        Identify products that need restocking (current < min_qty).
+        
+        Args:
+            filters: Optional filters for shape, color, bucket, etc.
+        
+        Returns:
+            List of products needing restock
+        """
+        df_filtered = self.df.copy()
+        
+        # Apply filters if provided
+        if filters:
+            if filters.get('shape') and filters['shape'] != 'All':
+                df_filtered = df_filtered[df_filtered['Shape key'] == filters['shape']]
+            if filters.get('color') and filters['color'] != 'All':
+                df_filtered = df_filtered[df_filtered['Color Key'] == filters['color']]
+            if filters.get('bucket') and filters['bucket'] != 'All':
+                df_filtered = df_filtered[df_filtered['Buckets'] == filters['bucket']]
+        
+        # Get latest data for each product
+        latest_data = df_filtered.groupby('Product Id').last().reset_index()
+        
+        products = []
+        
+        for _, row in latest_data.iterrows():
+            # Calculate profit per unit
+            profit = row['Min Selling Price'] - row['Max Buying Price']
+            
+            # Get current quantity
+            current = row.get('Current Qty', 0)
+            min_required = row['Min Qty']
+            
+            # Check if restocking needed
+            requires_restock = current < min_required
+            shortage = max(0, min_required - current)
+            
+            # Only include products with positive profit
+            if profit > 0:
+                product = OptimizationProduct(
+                    product_id=str(row['Product Id']),
+                    current_qty=current,
+                    min_qty=min_required,
+                    max_qty=row['Max Qty'],
+                    max_buying_price=row['Max Buying Price'],
+                    min_selling_price=row['Min Selling Price'],
+                    profit_per_unit=profit,
+                    requires_restock=requires_restock,
+                    shortage_qty=shortage,
+                    shape=row.get('Shape key', ''),
+                    color=row.get('Color Key', ''),
+                    bucket=row.get('Buckets', ''),
+                    weight=row.get('Weight', 0),
+                    month=row.get('Month', ''),
+                    year=row.get('Year', 0)
+                )
+                
+                if requires_restock:
+                    products.append(product)
+        
+        self.products = products
+        return products
+    
+    def optimize_scipy(self, max_units_per_product: int = 100) -> Dict:
+        """Optimize using scipy linear programming."""
+        if not self.products:
+            return {"status": "No products need restocking", "recommendations": []}
+        
+        n_products = len(self.products)
+        
+        # Objective: Maximize profit (minimize negative profit)
+        c = [-p.profit_per_unit for p in self.products]
+        
+        # Constraints
+        A_ub = []
+        b_ub = []
+        
+        # Budget constraint
+        if self.budget < float('inf'):
+            A_ub.append([p.max_buying_price for p in self.products])
+            b_ub.append(self.budget)
+        
+        # Bounds for each product
+        bounds = []
+        for product in self.products:
+            min_purchase = product.shortage_qty  # At least fill shortage
+            max_purchase = min(
+                max_units_per_product,
+                product.max_qty - product.current_qty  # Don't exceed max
+            )
+            bounds.append((max(0, min_purchase), max(0, max_purchase)))
+        
+        # Solve
+        try:
+            if len(A_ub) > 0:
+                result = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
+            else:
+                result = linprog(c, bounds=bounds, method='highs')
+            
+            if result.success:
+                recommendations = []
+                total_cost = 0
+                total_profit = 0
+                
+                for i, product in enumerate(self.products):
+                    qty = result.x[i]
+                    if qty > 0.1:
+                        cost = qty * product.max_buying_price
+                        profit = qty * product.profit_per_unit
+                        total_cost += cost
+                        total_profit += profit
+                        
+                        recommendations.append({
+                            'product_id': product.product_id,
+                            'purchase_qty': round(qty, 0),
+                            'current_qty': round(product.current_qty, 0),
+                            'min_qty': product.min_qty,
+                            'shortage': round(product.shortage_qty, 0),
+                            'unit_cost': product.max_buying_price,
+                            'unit_profit': product.profit_per_unit,
+                            'total_cost': cost,
+                            'expected_profit': profit,
+                            'roi': (profit / cost * 100) if cost > 0 else 0,
+                            'shape': product.shape,
+                            'color': product.color,
+                            'bucket': product.bucket,
+                            'urgency': self._get_urgency(product),
+                            'category': self._categorize_recommendation(product, profit, cost)
+                        })
+                
+                return {
+                    'status': 'success',
+                    'method': 'scipy_optimization',
+                    'total_cost': total_cost,
+                    'expected_profit': total_profit,
+                    'roi': (total_profit / total_cost * 100) if total_cost > 0 else 0,
+                    'recommendations': sorted(recommendations, key=lambda x: x['expected_profit'], reverse=True)
+                }
+        except Exception as e:
+            logger.error(f"Scipy optimization failed: {e}")
+        
+        # Fallback to greedy
+        return self.optimize_greedy(max_units_per_product)
+    
+    def optimize_greedy(self, max_units_per_product: int = 100) -> Dict:
+        """Greedy algorithm fallback for optimization."""
+        if not self.products:
+            return {"status": "No products need restocking", "recommendations": []}
+        
+        # Sort by profit per unit and urgency
+        sorted_products = sorted(
+            self.products, 
+            key=lambda x: (x.profit_per_unit, -x.shortage_qty), 
+            reverse=True
+        )
+        
+        recommendations = []
+        total_cost = 0
+        total_profit = 0
+        remaining_budget = self.budget
+        
+        for product in sorted_products:
+            # Calculate purchase quantity
+            max_purchase = min(
+                product.shortage_qty + min(10, product.shortage_qty * 0.5),  # Buffer
+                max_units_per_product,
+                product.max_qty - product.current_qty
+            )
+            
+            if self.budget < float('inf'):
+                affordable_units = remaining_budget / product.max_buying_price if product.max_buying_price > 0 else 0
+                max_purchase = min(max_purchase, affordable_units)
+            
+            if max_purchase >= product.shortage_qty:
+                purchase_qty = max(product.shortage_qty, max_purchase)
+                
+                cost = purchase_qty * product.max_buying_price
+                profit = purchase_qty * product.profit_per_unit
+                
+                if remaining_budget >= cost:
+                    total_cost += cost
+                    total_profit += profit
+                    remaining_budget -= cost
+                    
+                    recommendations.append({
+                        'product_id': product.product_id,
+                        'purchase_qty': round(purchase_qty, 0),
+                        'current_qty': round(product.current_qty, 0),
+                        'min_qty': product.min_qty,
+                        'shortage': round(product.shortage_qty, 0),
+                        'unit_cost': product.max_buying_price,
+                        'unit_profit': product.profit_per_unit,
+                        'total_cost': cost,
+                        'expected_profit': profit,
+                        'roi': (profit / cost * 100) if cost > 0 else 0,
+                        'shape': product.shape,
+                        'color': product.color,
+                        'bucket': product.bucket,
+                        'urgency': self._get_urgency(product),
+                        'category': self._categorize_recommendation(product, profit, cost)
+                    })
+        
+        return {
+            'status': 'success',
+            'method': 'greedy_algorithm',
+            'total_cost': total_cost,
+            'expected_profit': total_profit,
+            'roi': (total_profit / total_cost * 100) if total_cost > 0 else 0,
+            'remaining_budget': remaining_budget,
+            'recommendations': recommendations
+        }
+    
+    def _get_urgency(self, product: OptimizationProduct) -> str:
+        """Determine urgency level for a product."""
+        shortage_pct = (product.shortage_qty / product.min_qty * 100) if product.min_qty > 0 else 0
+        
+        if product.current_qty == 0:
+            return 'CRITICAL'
+        elif shortage_pct >= 70:
+            return 'HIGH'
+        elif shortage_pct >= 40:
+            return 'MEDIUM'
+        else:
+            return 'LOW'
+    
+    def _categorize_recommendation(self, product: OptimizationProduct, profit: float, cost: float) -> str:
+        """Categorize recommendation type."""
+        roi = (profit / cost * 100) if cost > 0 else 0
+        
+        if product.current_qty == 0:
+            return 'Immediate Action'
+        elif roi >= 40:
+            return 'High ROI'
+        elif cost <= 5000 and profit >= 1000:
+            return 'Quick Win'
+        elif product.shortage_qty > product.min_qty * 0.5:
+            return 'Urgent Restock'
+        else:
+            return 'Standard Restock'
+    
+    def optimize(self, budget: Optional[float] = None, 
+                filters: Optional[Dict] = None,
+                max_units_per_product: int = 100) -> Dict:
+        """Main optimization function."""
+        if budget is not None:
+            self.budget = budget
+        
+        # Identify products needing restock
+        self.identify_restock_products(filters)
+        
+        # Use scipy if available, otherwise greedy
+        if SCIPY_AVAILABLE:
+            result = self.optimize_scipy(max_units_per_product)
+        else:
+            result = self.optimize_greedy(max_units_per_product)
+        
+        self.optimization_result = result
+        return result
+    
+    def get_budget_scenarios(self, budget_levels: List[float]) -> Dict:
+        """Analyze different budget scenarios."""
+        scenarios = {}
+        
+        for budget in budget_levels:
+            result = self.optimize(budget=budget)
+            
+            if result['status'] == 'success':
+                scenarios[budget] = {
+                    'total_cost': result['total_cost'],
+                    'expected_profit': result['expected_profit'],
+                    'roi': result['roi'],
+                    'num_products': len(result['recommendations']),
+                    'method': result.get('method', 'unknown')
+                }
+        
+        return scenarios
+    
+    def get_critical_products(self) -> List[Dict]:
+        """Get products with critical shortage."""
+        if not self.products:
+            self.identify_restock_products()
+        
+        critical = []
+        for product in self.products:
+            if product.current_qty == 0 or product.shortage_qty > product.min_qty * 0.7:
+                critical.append({
+                    'product_id': product.product_id,
+                    'current_qty': product.current_qty,
+                    'min_qty': product.min_qty,
+                    'shortage': product.shortage_qty,
+                    'profit_potential': product.shortage_qty * product.profit_per_unit,
+                    'investment_needed': product.shortage_qty * product.max_buying_price,
+                    'urgency': self._get_urgency(product)
+                })
+        
+        return sorted(critical, key=lambda x: x['shortage'], reverse=True)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def optimize_inventory_cached(df_csv: str, budget: Optional[float], filters_str: str, max_units: int):
+    """Cached version of inventory optimization."""
+    from io import StringIO
+    df = pd.read_csv(StringIO(df_csv))
+    
+    # Parse filters
+    filters = json.loads(filters_str) if filters_str else None
+    
+    optimizer = InventoryOptimizer(df, budget if budget else float('inf'))
+    result = optimizer.optimize(filters=filters, max_units_per_product=max_units)
+    
+    # Get additional insights
+    critical_products = optimizer.get_critical_products()
+    
+    # Budget scenarios
+    if budget and budget < float('inf'):
+        scenarios = optimizer.get_budget_scenarios([
+            budget * 0.5,
+            budget * 0.75,
+            budget,
+            budget * 1.25,
+            budget * 1.5
+        ])
+    else:
+        scenarios = optimizer.get_budget_scenarios([25000, 50000, 100000, 200000, 500000])
+    
+    return result, critical_products, scenarios
+
+def display_optimized_recommendations_section(master_df):
+    """Display the optimized inventory recommendations section."""
+    st.header("🔬 Optimized Inventory Recommendations")
+    st.markdown("Mathematical optimization using linear programming for maximum profit")
+    
+    # Create tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🎯 Optimization Dashboard",
+        "📊 Budget Analysis", 
+        "🔍 Product Details",
+        "📈 Visualization",
+        "📋 Export Reports"
+    ])
+    
+    with tab1:
+        st.subheader("Inventory Optimization Settings")
+        
+        # Configuration columns
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            budget_type = st.selectbox(
+                "Budget Configuration",
+                ["Unlimited Budget", "Fixed Budget", "Budget Range Analysis"],
+                help="Choose budget constraint type",key='Budget_Config'
+            )
+            
+            if budget_type == "Fixed Budget":
+                budget = st.number_input(
+                    "Budget Amount ($)",
+                    min_value=1000.0,
+                    max_value=1000000.0,
+                    value=100000.0,
+                    step=5000.0,
+                    key="opt_fixed_budget"
+                )
+            elif budget_type == "Budget Range Analysis":
+                budget_min = st.number_input("Min Budget", value=25000.0, step=5000.0,key="opt_budget_min")
+                budget_max = st.number_input("Max Budget", value=200000.0, step=5000.0,key="opt_budget_max")
+                budget = budget_max  # Use max for initial optimization
+            else:
+                budget = None
+        
+        with col2:
+            max_units = st.number_input(
+                "Max Units per Product",
+                min_value=10,
+                max_value=500,
+                value=100,
+                step=10,
+                help="Maximum units to order per product",
+                key="opt_max_units"
+            )
+        
+        with col3:
+            shape_filter = st.selectbox(
+                "Filter by Shape",
+                ['All'] + sorted(master_df['Shape key'].unique().tolist()) if 'Shape key' in master_df.columns else ['All'],
+                help="Filter products by shape",
+                key="opt_shape_filter"
+            )
+        
+        with col4:
+            color_filter = st.selectbox(
+                "Filter by Color",
+                ['All'] + sorted(master_df['Color Key'].unique().tolist()) if 'Color Key' in master_df.columns else ['All'],
+                help="Filter products by color",
+                key="opt_color_filter"
+            )
+        
+        # Advanced filters
+        with st.expander("Advanced Filters"):
+            adv_col1, adv_col2, adv_col3 = st.columns(3)
+            
+            with adv_col1:
+                bucket_filter = st.selectbox(
+                    "Filter by Bucket",
+                    ['All'] + sorted(master_df['Buckets'].unique().tolist()) if 'Buckets' in master_df.columns else ['All'],
+                    key="opt_bucket_filter"
+                )
+            
+            with adv_col2:
+                min_roi = st.slider(
+                    "Minimum ROI (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=10,
+                    step=5,
+                    key="opt_min_roi",
+                    help="Filter recommendations by minimum ROI"
+                )
+            
+            with adv_col3:
+                optimization_method = st.radio(
+                    "Optimization Method",
+                    ["Auto (Best Available)", "Linear Programming", "Greedy Algorithm"],
+                    help="Choose optimization algorithm", key="opt_method"
+                )
+        
+        # Prepare filters
+        filters = {
+            'shape': shape_filter if shape_filter != 'All' else None,
+            'color': color_filter if color_filter != 'All' else None,
+            'bucket': bucket_filter if bucket_filter != 'All' else None
+        }
+        
+        # Run optimization button
+        if st.button("🚀 Run Optimization", type="primary", key="run_optimization"):
+            with st.spinner("Running mathematical optimization..."):
+                try:
+                    # Prepare data for caching
+                    df_csv = master_df.to_csv(index=False)
+                    filters_str = json.dumps(filters)
+                    
+                    # Run optimization
+                    result, critical_products, scenarios = optimize_inventory_cached(
+                        df_csv, budget, filters_str, max_units
+                    )
+                    
+                    # Store results
+                    st.session_state.optimization_result = result
+                    st.session_state.critical_products = critical_products
+                    st.session_state.budget_scenarios = scenarios
+                    
+                    if result and result.get('status') == 'success':
+                        st.success(f"Optimization complete! Method: {result.get('method', 'Unknown')}")
+                    else:
+                        st.warning("Optimization completed with warnings or no products need restocking")
+                except Exception as e:
+                    st.error(f"Error during optimization: {str(e)}")
+                    logger.error(f"Optimization error: {e}")
+        
+        # Display results if available
+        if 'optimization_result' in st.session_state and st.session_state.optimization_result:
+            result = st.session_state.optimization_result
+            
+            if result and result.get('status') == 'success' and result.get('recommendations'):
+                # Summary metrics
+                st.markdown("---")
+                st.subheader("📊 Optimization Results")
+                
+                metric_cols = st.columns(6)
+                
+                with metric_cols[0]:
+                    st.metric(
+                        "Total Investment",
+                        f"${result.get('total_cost', 0):,.0f}",
+                        help="Total capital required"
+                    )
+                
+                with metric_cols[1]:
+                    st.metric(
+                        "Expected Profit",
+                        f"${result.get('expected_profit', 0):,.0f}",
+                        f"{result.get('roi', 0):.1f}% ROI"
+                    )
+                
+                with metric_cols[2]:
+                    recommendations = result.get('recommendations', [])
+                    st.metric(
+                        "Products",
+                        len(recommendations),
+                        help="Number of products to purchase"
+                    )
+                
+                with metric_cols[3]:
+                    critical_count = len([r for r in recommendations if r.get('urgency') == 'CRITICAL'])
+                    st.metric(
+                        "Critical Items",
+                        critical_count,
+                        help="Out of stock products"
+                    )
+                
+                with metric_cols[4]:
+                    if 'remaining_budget' in result:
+                        st.metric(
+                            "Remaining Budget",
+                            f"${result.get('remaining_budget', 0):,.0f}",
+                            help="Unused budget"
+                        )
+                    else:
+                        st.metric("Method", result.get('method', 'Unknown').replace('_', ' ').title())
+                
+                with metric_cols[5]:
+                    avg_roi = np.mean([r.get('roi', 0) for r in recommendations]) if recommendations else 0
+                    st.metric(
+                        "Avg Product ROI",
+                        f"{avg_roi:.1f}%",
+                        help="Average ROI per product"
+                    )
+                
+                # Category breakdown
+                st.markdown("---")
+                st.subheader("📦 Recommendation Categories")
+                
+                categories = {}
+                for rec in recommendations:
+                    cat = rec.get('category', 'Standard')
+                    if cat not in categories:
+                        categories[cat] = {'count': 0, 'investment': 0, 'profit': 0}
+                    categories[cat]['count'] += 1
+                    categories[cat]['investment'] += rec.get('total_cost', 0)
+                    categories[cat]['profit'] += rec.get('expected_profit', 0)
+                
+                if categories:
+                    cat_cols = st.columns(len(categories))
+                    for idx, (cat_name, cat_data) in enumerate(categories.items()):
+                        with cat_cols[idx]:
+                            st.markdown(f"**{cat_name}**")
+                            st.markdown(f"Products: **{cat_data['count']}**")
+                            st.markdown(f"Investment: **${cat_data['investment']:,.0f}**")
+                            st.markdown(f"Profit: **${cat_data['profit']:,.0f}**")
+                
+                # Recommendations table
+                st.markdown("---")
+                st.subheader("🛒 Optimized Purchase Recommendations")
+                
+                # Apply ROI filter
+                filtered_recs = [r for r in recommendations if r.get('roi', 0) >= min_roi]
+                
+                if filtered_recs:
+                    rec_df = pd.DataFrame(filtered_recs)
+                    
+                    # Select columns that exist
+                    display_cols = []
+                    possible_cols = [
+                        'product_id', 'urgency', 'category', 'current_qty', 'shortage',
+                        'purchase_qty', 'unit_cost', 'unit_profit', 'total_cost',
+                        'expected_profit', 'roi', 'shape', 'color'
+                    ]
+                    for col in possible_cols:
+                        if col in rec_df.columns:
+                            display_cols.append(col)
+                    
+                    if display_cols:
+                        # Style the dataframe
+                        def style_urgency(val):
+                            if val == 'CRITICAL':
+                                return 'background-color: #ffcdd2'
+                            elif val == 'HIGH':
+                                return 'background-color: #ffe0b2'
+                            elif val == 'MEDIUM':
+                                return 'background-color: #fff9c4'
+                            return ''
+                        
+                        styled_df = rec_df[display_cols].style
+                        
+                        if 'urgency' in display_cols:
+                            styled_df = styled_df.applymap(style_urgency, subset=['urgency'])
+                        
+                        # Format numeric columns
+                        format_dict = {}
+                        if 'unit_cost' in display_cols:
+                            format_dict['unit_cost'] = '${:.2f}'
+                        if 'unit_profit' in display_cols:
+                            format_dict['unit_profit'] = '${:.2f}'
+                        if 'total_cost' in display_cols:
+                            format_dict['total_cost'] = '${:,.2f}'
+                        if 'expected_profit' in display_cols:
+                            format_dict['expected_profit'] = '${:,.2f}'
+                        if 'roi' in display_cols:
+                            format_dict['roi'] = '{:.1f}%'
+                        if 'current_qty' in display_cols:
+                            format_dict['current_qty'] = '{:.0f}'
+                        if 'shortage' in display_cols:
+                            format_dict['shortage'] = '{:.0f}'
+                        if 'purchase_qty' in display_cols:
+                            format_dict['purchase_qty'] = '{:.0f}'
+                        
+                        if format_dict:
+                            styled_df = styled_df.format(format_dict)
+                        
+                        st.dataframe(styled_df, use_container_width=True, hide_index=True, height=400)
+                    else:
+                        st.dataframe(rec_df, use_container_width=True, hide_index=True, height=400)
+                else:
+                    st.info(f"No recommendations meet the minimum ROI threshold of {min_roi}%")
+            elif result and result.get('status') != 'success':
+                st.warning(f"Optimization status: {result.get('status', 'Unknown')}")
+                if result.get('message'):
+                    st.info(result.get('message'))
+            else:
+                st.info("No products currently need restocking based on the selected filters")
+        else:
+            st.info("Click 'Run Optimization' to generate recommendations")
+    
+    with tab2:
+        st.subheader("📊 Budget Scenario Analysis")
+        
+        if 'budget_scenarios' in st.session_state and st.session_state.budget_scenarios:
+            scenarios = st.session_state.budget_scenarios
+            
+            if scenarios:
+                # Create comparison table
+                scenario_data = []
+                for budget_amt, metrics in scenarios.items():
+                    scenario_data.append({
+                        'Budget': f"${budget_amt:,.0f}" if isinstance(budget_amt, (int, float)) else budget_amt,
+                        'Investment': f"${metrics.get('total_cost', 0):,.0f}",
+                        'Profit': f"${metrics.get('expected_profit', 0):,.0f}",
+                        'ROI': f"{metrics.get('roi', 0):.1f}%",
+                        'Products': metrics.get('num_products', 0)
+                    })
+                
+                if scenario_data:
+                    scenario_df = pd.DataFrame(scenario_data)
+                    st.dataframe(scenario_df, use_container_width=True, hide_index=True)
+                    
+                    # Visualization
+                    st.markdown("---")
+                    
+                    # ROI by budget chart
+                    budgets = list(scenarios.keys())
+                    rois = [metrics.get('roi', 0) for metrics in scenarios.values()]
+                    profits = [metrics.get('expected_profit', 0) for metrics in scenarios.values()]
+                    
+                    fig = make_subplots(
+                        rows=1, cols=2,
+                        subplot_titles=('ROI by Budget', 'Profit by Budget')
+                    )
+                    
+                    fig.add_trace(
+                        go.Bar(x=[f"${b:,.0f}" if isinstance(b, (int, float)) else b for b in budgets], 
+                              y=rois, name='ROI %'),
+                        row=1, col=1
+                    )
+                    
+                    fig.add_trace(
+                        go.Bar(x=[f"${b:,.0f}" if isinstance(b, (int, float)) else b for b in budgets], 
+                              y=profits, name='Profit $'),
+                        row=1, col=2
+                    )
+                    
+                    fig.update_layout(height=400, showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Optimal budget recommendation
+                    st.markdown("---")
+                    st.subheader("💡 Budget Recommendation")
+                    
+                    # Find best ROI scenario
+                    if scenarios:
+                        best_roi_budget = max(scenarios.items(), key=lambda x: x[1].get('roi', 0))
+                        st.success(f"**Optimal Budget for ROI**: ${best_roi_budget[0]:,.0f} → {best_roi_budget[1].get('roi', 0):.1f}% ROI")
+                        
+                        # Find best profit scenario
+                        best_profit_budget = max(scenarios.items(), key=lambda x: x[1].get('expected_profit', 0))
+                        st.info(f"**Optimal Budget for Profit**: ${best_profit_budget[0]:,.0f} → ${best_profit_budget[1].get('expected_profit', 0):,.0f} profit")
+        else:
+            st.info("Run optimization first to see budget analysis")
+    
+    with tab3:
+        st.subheader("🔍 Product Deep Dive")
+        
+        if 'optimization_result' in st.session_state:
+            result = st.session_state.optimization_result
+            if result and result.get('recommendations'):
+                recommendations = result.get('recommendations', [])
+                
+                if recommendations:
+                    # Product selector
+                    product_ids = [r.get('product_id', 'Unknown') for r in recommendations]
+                    selected_product = st.selectbox(
+                        "Select Product for Analysis",
+                        product_ids,
+                        format_func=lambda x: f"{x} ({next((r.get('urgency', '') for r in recommendations if r.get('product_id') == x), '')})",
+                        key="opt_product_selector"
+                    )
+                    
+                    if selected_product:
+                        # Get product details
+                        product = next((r for r in recommendations if r.get('product_id') == selected_product), None)
+                        
+                        if product:
+                            # Display details
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.markdown("### 📦 Stock Information")
+                                st.markdown(f"**Current Stock**: {product.get('current_qty', 0):.0f} units")
+                                st.markdown(f"**Min Required**: {product.get('min_qty', 0):.0f} units")
+                                st.markdown(f"**Shortage**: {product.get('shortage', 0):.0f} units")
+                                st.markdown(f"**Purchase Qty**: {product.get('purchase_qty', 0):.0f} units")
+                                st.markdown(f"**Urgency**: {product.get('urgency', 'Unknown')}")
+                            
+                            with col2:
+                                st.markdown("### 💰 Financial Analysis")
+                                st.markdown(f"**Unit Cost**: ${product.get('unit_cost', 0):,.2f}")
+                                st.markdown(f"**Unit Profit**: ${product.get('unit_profit', 0):,.2f}")
+                                st.markdown(f"**Total Investment**: ${product.get('total_cost', 0):,.2f}")
+                                st.markdown(f"**Expected Profit**: ${product.get('expected_profit', 0):,.2f}")
+                                st.markdown(f"**ROI**: {product.get('roi', 0):.1f}%")
+                            
+                            with col3:
+                                st.markdown("### 📋 Product Details")
+                                st.markdown(f"**Category**: {product.get('category', 'Unknown')}")
+                                st.markdown(f"**Shape**: {product.get('shape', 'N/A')}")
+                                st.markdown(f"**Color**: {product.get('color', 'N/A')}")
+                                st.markdown(f"**Bucket**: {product.get('bucket', 'N/A')}")
+                else:
+                    st.info("No recommendations available")
+            else:
+                st.info("Run optimization first to analyze products")
+        else:
+            st.info("Run optimization first to analyze products")
+    
+    with tab4:
+        st.subheader("📈 Optimization Visualizations")
+        
+        if 'optimization_result' in st.session_state:
+            result = st.session_state.optimization_result
+            if result and result.get('recommendations'):
+                recommendations = result.get('recommendations', [])
+                
+                if recommendations:
+                    # ROI Distribution
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # ROI histogram
+                        roi_values = [r.get('roi', 0) for r in recommendations]
+                        
+                        if roi_values:
+                            fig = px.histogram(
+                                x=roi_values,
+                                nbins=min(20, len(roi_values)),
+                                title='ROI Distribution',
+                                labels={'x': 'ROI (%)', 'y': 'Number of Products'}
+                            )
+                            fig.add_vline(x=np.mean(roi_values), line_dash="dash", annotation_text="Average")
+                            st.plotly_chart(fig, use_container_width=True)
+                    
+                    with col2:
+                        # Investment vs Profit scatter
+                        fig = px.scatter(
+                            x=[r.get('total_cost', 0) for r in recommendations],
+                            y=[r.get('expected_profit', 0) for r in recommendations],
+                            size=[r.get('purchase_qty', 1) for r in recommendations],
+                            color=[r.get('urgency', 'Unknown') for r in recommendations],
+                            hover_data={'Product': [r.get('product_id', '') for r in recommendations]},
+                            title='Investment vs Profit',
+                            labels={'x': 'Investment ($)', 'y': 'Expected Profit ($)'}
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No data available for visualization")
+            else:
+                st.info("Run optimization first to see visualizations")
+        else:
+            st.info("Run optimization first to see visualizations")
+    
+    with tab5:
+        st.subheader("📋 Export Reports")
+        
+        if 'optimization_result' in st.session_state:
+            result = st.session_state.optimization_result
+            if result and result.get('recommendations'):
+                recommendations = result.get('recommendations', [])
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("### 📥 Download Options")
+                    
+                    # Full recommendations
+                    rec_df = pd.DataFrame(recommendations)
+                    csv = rec_df.to_csv(index=False)
+                    
+                    st.download_button(
+                        "📊 Download Full Optimization Results",
+                        data=csv,
+                        file_name=f"optimization_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+                    
+                    # Critical items only
+                    critical_items = [r for r in recommendations if r.get('urgency') in ['CRITICAL', 'HIGH']]
+                    if critical_items:
+                        critical_df = pd.DataFrame(critical_items)
+                        critical_csv = critical_df.to_csv(index=False)
+                        st.download_button(
+                            "🚨 Download Critical Items",
+                            data=critical_csv,
+                            file_name=f"critical_items_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                
+                with col2:
+                    st.markdown("### 📄 Optimization Report")
+                    
+                    # Generate report
+                    report = f"""
+INVENTORY OPTIMIZATION REPORT
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Method: {result.get('method', 'Unknown')}
+
+OPTIMIZATION SUMMARY
+====================
+Total Investment: ${result.get('total_cost', 0):,.2f}
+Expected Profit: ${result.get('expected_profit', 0):,.2f}
+ROI: {result.get('roi', 0):.1f}%
+Products to Purchase: {len(recommendations)}
+
+TOP 5 RECOMMENDATIONS
+=====================
+"""
+                    for i, rec in enumerate(recommendations[:5], 1):
+                        report += f"""
+{i}. {rec.get('product_id', 'Unknown')}
+   Urgency: {rec.get('urgency', 'Unknown')}
+   Purchase: {rec.get('purchase_qty', 0):.0f} units
+   Investment: ${rec.get('total_cost', 0):,.2f}
+   Expected Profit: ${rec.get('expected_profit', 0):,.2f}
+   ROI: {rec.get('roi', 0):.1f}%
+"""
+                    
+                    st.download_button(
+                        "📄 Download Optimization Report",
+                        data=report,
+                        file_name=f"optimization_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        mime="text/plain"
+                    )
+                    
+                    with st.expander("Preview Report"):
+                        st.text(report)
+            else:
+                st.info("Run optimization first to generate reports")
+        else:
+            st.info("Run optimization first to generate reports")
+    
+    
+# ===== END OF INVENTORY OPTIMIZATION SYSTEM =====
+
+# Stable session state initialization
 class StockAnalyzer:
     """
     Advanced stock analyzer for product recommendations and profit optimization.
@@ -1231,7 +2172,8 @@ def display_stock_recommendations_section(master_df):
             budget_option = st.selectbox(
                 "Budget Constraint",
                 ["No Budget Limit", "Set Budget Limit"],
-                help="Optionally set a budget limit for recommendations"
+                help="Optionally set a budget limit for recommendations",
+                key="rec_budget_option"
             )
             
             if budget_option == "Set Budget Limit":
@@ -1240,7 +2182,8 @@ def display_stock_recommendations_section(master_df):
                     min_value=1000.0,
                     max_value=1000000.0,
                     value=50000.0,
-                    step=1000.0
+                    step=1000.0,
+                    key="opt_budget_max"
                 )
             else:
                 budget = None
@@ -1252,7 +2195,8 @@ def display_stock_recommendations_section(master_df):
                 max_value=50,
                 value=15,
                 step=5,
-                help="Number of top products to recommend"
+                help="Number of top products to recommend",
+                key="opt_top_n"
             )
         
         with col3:
@@ -1262,7 +2206,8 @@ def display_stock_recommendations_section(master_df):
                 max_value=100,
                 value=0,
                 step=5,
-                help="Filter recommendations by minimum ROI"
+                help="Filter recommendations by minimum ROI",
+                key="opt_min_roi"
             )
         
         # Generate recommendations button
@@ -1411,7 +2356,8 @@ def display_stock_recommendations_section(master_df):
             selected_product = st.selectbox(
                 "Select Product for Detailed Analysis",
                 product_ids,
-                format_func=lambda x: f"{x} - {next((r['urgency'] for r in st.session_state.stock_recommendations if r['product_id'] == x), '')}"
+                format_func=lambda x: f"{x} - {next((r['urgency'] for r in st.session_state.stock_recommendations if r['product_id'] == x), '')}",
+                key="rec_product_selector"
             )
             
             if selected_product:
@@ -1508,7 +2454,8 @@ def display_stock_recommendations_section(master_df):
                     ["Conservative (Critical Only)", 
                      "Balanced (Critical + High Priority)",
                      "Aggressive (All Recommendations)",
-                     "Custom Selection"]
+                     "Custom Selection"],
+                     key="investment_scenario"
                 )
                 
                 if scenario == "Conservative (Critical Only)":
@@ -1724,8 +2671,9 @@ def initialize_session_state():
             'min_total_value': 10000,
             'price_volatility': 0.2
         },
-        'stock_recommendations': [],
-        'investment_summary': {}
+        'optimization_result': None,
+        'critical_products': [],
+        'budget_scenarios': {}
     }
     
     for key, default_value in defaults.items():
@@ -3262,7 +4210,7 @@ def display_dashboard():
         main_tab1, main_tab2, main_tab3 = st.tabs([
             "📊 Dashboard & GAP Analysis", 
             "📈 Stock Trend Analysis",
-            "🎯 Smart Purchase Recommendations"
+            "🔬 Optimized Inventory Recommendations"
         ])
         
         with main_tab1:
@@ -3277,11 +4225,11 @@ def display_dashboard():
                 st.info("No data available. Please upload an Excel file to run trend analysis.")
         
         with main_tab3:
-            # Smart recommendations section
+            # Optimized recommendations section
             if not st.session_state.master_df.empty:
-                display_stock_recommendations_section(st.session_state.master_df)
+                display_optimized_recommendations_section(st.session_state.master_df)
             else:
-                st.info("No data available. Please upload an Excel file to generate recommendations.")
+                st.info("No data available. Please upload an Excel file to generate optimized recommendations.")
                 
     except Exception as e:
         st.error(f"Error in dashboard display: {str(e)}")
