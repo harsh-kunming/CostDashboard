@@ -2935,6 +2935,327 @@ def create_gap_table_html(gap_summary_df):
         logger.error(f"Error creating GAP table HTML: {e}")
         return "<p>Error creating table</p>"
 
+# ===== MISSING PRODUCTS ANALYSIS FUNCTIONS =====
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_missing_products_analysis_cached(df_csv: str, month: str, year: int, shape: str, color: str, bucket: str):
+    """Cached version of missing products analysis"""
+    try:
+        from io import StringIO
+        df = pd.read_csv(StringIO(df_csv))
+        
+        # Get all unique product IDs
+        all_product_ids = set(df['Product Id'].unique())
+        
+        # Filter for selected month and year
+        mask = (df['Month'] == month) & (df['Year'] == year)
+        
+        # Apply additional filters if selected
+        if shape != "None":
+            mask &= (df['Shape key'] == shape)
+        if color != "None":
+            mask &= (df['Color Key'] == color)
+        if bucket != "None":
+            mask &= (df['Buckets'] == bucket)
+        
+        current_month_products = set(df[mask]['Product Id'].unique())
+        
+        # Find missing products
+        missing_products = all_product_ids - current_month_products
+        
+        if not missing_products:
+            return pd.DataFrame(), {}
+        
+        # Get details of missing products from their last occurrence
+        missing_details = []
+        
+        for product_id in missing_products:
+            # Get last occurrence of this product
+            product_data = df[df['Product Id'] == product_id].copy()
+            
+            if not product_data.empty:
+                # Sort by year and month to get the most recent data
+                product_data['date'] = pd.to_datetime(
+                    product_data['Year'].astype(str) + '-' + product_data['Month'], 
+                    format='%Y-%B', 
+                    errors='coerce'
+                )
+                product_data = product_data.sort_values('date')
+                last_record = product_data.iloc[-1]
+                
+                # Calculate months since last seen
+                last_date = last_record['date']
+                current_date = pd.to_datetime(f"{year}-{month}", format='%Y-%B')
+                months_missing = (current_date.year - last_date.year) * 12 + (current_date.month - last_date.month)
+                
+                missing_details.append({
+                    'Product ID': product_id,
+                    'Last Seen Month': last_record['Month'],
+                    'Last Seen Year': int(last_record['Year']),
+                    'Months Missing': months_missing,
+                    'Shape': last_record.get('Shape key', 'Unknown'),
+                    'Color': last_record.get('Color Key', 'Unknown'),
+                    'Bucket': last_record.get('Buckets', 'Unknown'),
+                    'Last Weight': round(last_record.get('Weight', 0), 2),
+                    'Last Avg Cost': round(last_record.get('Avg Cost Total', 0), 2),
+                    'Last Max Qty': int(last_record.get('Max Qty', 0)),
+                    'Last Min Qty': int(last_record.get('Min Qty', 0)),
+                    'Max Buying Price': round(last_record.get('Max Buying Price', 0), 2),
+                    'Min Selling Price': round(last_record.get('Min Selling Price', 0), 2)
+                })
+        
+        missing_df = pd.DataFrame(missing_details)
+        
+        if not missing_df.empty:
+            # Sort by months missing (descending) to show longest missing first
+            missing_df = missing_df.sort_values('Months Missing', ascending=False)
+            
+            # Categorize missing products
+            categories = {
+                'Critical': missing_df[missing_df['Months Missing'] >= 3],
+                'Warning': missing_df[(missing_df['Months Missing'] >= 2) & (missing_df['Months Missing'] < 3)],
+                'Recent': missing_df[missing_df['Months Missing'] < 2]
+            }
+            
+            # Calculate statistics
+            stats = {
+                'total_missing': len(missing_df),
+                'critical_missing': len(categories['Critical']),
+                'warning_missing': len(categories['Warning']),
+                'recent_missing': len(categories['Recent']),
+                'avg_months_missing': round(missing_df['Months Missing'].mean(), 1),
+                'max_months_missing': int(missing_df['Months Missing'].max()),
+                'total_value_missing': round(missing_df['Last Avg Cost'].sum(), 2)
+            }
+            
+            return missing_df, stats
+        
+        return pd.DataFrame(), {}
+        
+    except Exception as e:
+        logger.error(f"Error in missing products analysis: {e}")
+        return pd.DataFrame(), {}
+
+def display_missing_products_analysis(master_df, selected_month, selected_year, selected_shape, selected_color, selected_bucket):
+    """Display missing products analysis section"""
+    try:
+        st.markdown("---")
+        st.subheader("🔍 Missing Products Analysis")
+        st.markdown(f"**Products not found in {selected_month} {selected_year}**")
+        
+        # Convert dataframe for caching
+        df_csv = master_df.to_csv(index=False)
+        
+        # Get missing products analysis
+        missing_df, stats = get_missing_products_analysis_cached(
+            df_csv, selected_month, selected_year, 
+            selected_shape, selected_color, selected_bucket
+        )
+        
+        if missing_df.empty:
+            st.success("✅ All products are present in the selected month!")
+            return
+        
+        # Display summary metrics
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.metric(
+                "Total Missing",
+                f"{stats['total_missing']}",
+                help="Total number of products not found in selected month"
+            )
+        
+        with col2:
+            st.metric(
+                "Critical (≥3 months)",
+                f"{stats['critical_missing']}",
+                help="Products missing for 3 or more months"
+            )
+        
+        with col3:
+            st.metric(
+                "Warning (2 months)",
+                f"{stats['warning_missing']}",
+                help="Products missing for 2 months"
+            )
+        
+        with col4:
+            st.metric(
+                "Avg Months Missing",
+                f"{stats['avg_months_missing']}",
+                help="Average number of months products have been missing"
+            )
+        
+        with col5:
+            st.metric(
+                "Est. Value Missing",
+                f"${stats['total_value_missing']:,.0f}",
+                help="Total last known value of missing products"
+            )
+        
+        # Create tabs for different views
+        tab1, tab2, tab3 = st.tabs(["📊 Summary View", "📋 Detailed Table", "📈 Analysis Charts"])
+        
+        with tab1:
+            # Categorized display
+            if stats['critical_missing'] > 0:
+                st.markdown("### 🔴 Critical - Missing ≥3 Months")
+                critical_df = missing_df[missing_df['Months Missing'] >= 3].head(10)
+                
+                # Display as cards
+                for _, row in critical_df.iterrows():
+                    with st.expander(f"{row['Product ID']} - Missing {row['Months Missing']} months"):
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.markdown(f"**Last Seen:** {row['Last Seen Month']} {row['Last Seen Year']}")
+                            st.markdown(f"**Shape:** {row['Shape']}")
+                            st.markdown(f"**Color:** {row['Color']}")
+                        with col2:
+                            st.markdown(f"**Bucket:** {row['Bucket']}")
+                            st.markdown(f"**Last Weight:** {row['Last Weight']}")
+                            st.markdown(f"**Last Avg Cost:** ${row['Last Avg Cost']:,.2f}")
+                        with col3:
+                            st.markdown(f"**Max Qty:** {row['Last Max Qty']}")
+                            st.markdown(f"**Min Qty:** {row['Last Min Qty']}")
+                            st.markdown(f"**Buying Price:** ${row['Max Buying Price']:,.2f}")
+            
+            if stats['warning_missing'] > 0:
+                st.markdown("### 🟡 Warning - Missing 2 Months")
+                warning_df = missing_df[(missing_df['Months Missing'] >= 2) & (missing_df['Months Missing'] < 3)].head(5)
+                warning_cols = ['Product ID', 'Last Seen Month', 'Last Seen Year', 'Shape', 'Color', 'Last Avg Cost']
+                st.dataframe(warning_df[warning_cols], use_container_width=True, hide_index=True)
+            
+            if stats['recent_missing'] > 0:
+                st.markdown("### 🟢 Recent - Missing <2 Months")
+                recent_df = missing_df[missing_df['Months Missing'] < 2].head(5)
+                recent_cols = ['Product ID', 'Last Seen Month', 'Shape', 'Color', 'Last Avg Cost']
+                st.dataframe(recent_df[recent_cols], use_container_width=True, hide_index=True)
+        
+        with tab2:
+            # Full detailed table
+            st.markdown("### Complete Missing Products List")
+            
+            # Add filters for the table
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                min_months = st.number_input(
+                    "Min Months Missing",
+                    min_value=0,
+                    max_value=int(missing_df['Months Missing'].max()),
+                    value=0,
+                    key="missing_min_months"
+                )
+            with col2:
+                shape_filter = st.selectbox(
+                    "Filter by Shape",
+                    ['All'] + sorted(missing_df['Shape'].unique().tolist()),
+                    key="missing_shape_filter"
+                )
+            with col3:
+                color_filter = st.selectbox(
+                    "Filter by Color",
+                    ['All'] + sorted(missing_df['Color'].unique().tolist()),
+                    key="missing_color_filter"
+                )
+            
+            # Apply filters
+            filtered_missing = missing_df[missing_df['Months Missing'] >= min_months]
+            if shape_filter != 'All':
+                filtered_missing = filtered_missing[filtered_missing['Shape'] == shape_filter]
+            if color_filter != 'All':
+                filtered_missing = filtered_missing[filtered_missing['Color'] == color_filter]
+            
+            # Style the dataframe
+            def style_missing_months(val):
+                if val >= 3:
+                    return 'background-color: #ffcdd2'
+                elif val >= 2:
+                    return 'background-color: #fff9c4'
+                else:
+                    return 'background-color: #c8e6c9'
+            
+            styled_df = filtered_missing.style.applymap(
+                style_missing_months, 
+                subset=['Months Missing']
+            )
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True, height=400)
+            
+            # Download button
+            csv = filtered_missing.to_csv(index=False)
+            st.download_button(
+                "📥 Download Missing Products Report",
+                data=csv,
+                file_name=f"missing_products_{selected_month}_{selected_year}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_missing_products"
+            )
+        
+        with tab3:
+            # Analysis charts
+            if len(missing_df) > 0:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Distribution by months missing
+                    months_dist = missing_df['Months Missing'].value_counts().sort_index()
+                    fig = px.bar(
+                        x=months_dist.index,
+                        y=months_dist.values,
+                        title="Distribution by Months Missing",
+                        labels={'x': 'Months Missing', 'y': 'Number of Products'},
+                        color=months_dist.values,
+                        color_continuous_scale='Reds'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    # Top 10 by value
+                    top_value = missing_df.nlargest(10, 'Last Avg Cost')
+                    fig = px.bar(
+                        top_value,
+                        x='Last Avg Cost',
+                        y='Product ID',
+                        orientation='h',
+                        title="Top 10 Missing Products by Value",
+                        color='Months Missing',
+                        color_continuous_scale='RdYlGn_r'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # Distribution by shape
+                shape_dist = missing_df.groupby('Shape').agg({
+                    'Product ID': 'count',
+                    'Last Avg Cost': 'sum'
+                }).round(2)
+                shape_dist.columns = ['Count', 'Total Value']
+                
+                fig = make_subplots(
+                    rows=1, cols=2,
+                    subplot_titles=('Missing Products by Shape', 'Missing Value by Shape'),
+                    specs=[[{'type': 'pie'}, {'type': 'pie'}]]
+                )
+                
+                fig.add_trace(
+                    go.Pie(labels=shape_dist.index, values=shape_dist['Count'], name='Count'),
+                    row=1, col=1
+                )
+                
+                fig.add_trace(
+                    go.Pie(labels=shape_dist.index, values=shape_dist['Total Value'], name='Value'),
+                    row=1, col=2
+                )
+                
+                fig.update_layout(title="Missing Products Analysis by Shape", height=400)
+                st.plotly_chart(fig, use_container_width=True)
+                
+    except Exception as e:
+        st.error(f"Error in missing products analysis: {str(e)}")
+        logger.error(f"Error in missing products analysis: {e}")
+
+# ===== END OF MISSING PRODUCTS ANALYSIS FUNCTIONS =====
+
 # Optimized file history management
 @lru_cache(maxsize=1)
 def get_history_file_path():
@@ -4278,6 +4599,11 @@ def display_original_dashboard():
         # Display summary metrics
         display_summary_metrics(display_df, selected_month, selected_year, selected_shape, 
                               selected_color, selected_bucket, selected_variance_column)
+        
+        # Display missing products analysis for selected month
+        if selected_month != "None" and selected_year != "None":
+            display_missing_products_analysis(master_df, selected_month, int(selected_year), 
+                                             selected_shape, selected_color, selected_bucket)
         
         # Display visualizations
         display_visualizations(master_df, selected_shape, selected_color, selected_bucket, 
