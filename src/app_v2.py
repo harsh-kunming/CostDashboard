@@ -4074,10 +4074,7 @@ def optimized_get_filtered_data(filter_month, filter_year, filter_shape, filter_
             (master_df['Color Key'] == filter_color) &
             (master_df['Buckets'] == filter_bucket)
         ) 
-        var_filter_mask = (
-            (master_df['Month'] == filter_month) & 
-            (master_df['Year'] == int(filter_year))
-            )
+        
         filter_data = master_df[mask]
         var_data = master_df[var_mask]
         
@@ -4089,6 +4086,10 @@ def optimized_get_filtered_data(filter_month, filter_year, filter_shape, filter_
             max_qty = filter_data['Max Qty'].max() 
             min_qty = filter_data['Min Qty'].min() 
             variance_data = monthly_variance(var_data,var_col)
+            var_filter_mask = (
+            (variance_data['Month'] == filter_month) & 
+            (variance_data['Year'] == int(filter_year))
+            )
             variance_filtered_data = variance_data[var_filter_mask]
             avg = variance_filtered_data[var_col].mean() if not variance_filtered_data.empty else 0
             if avg != 0 :
@@ -4757,10 +4758,16 @@ def display_summary_metrics(display_df, selected_month, selected_year, selected_
         filter_val != "None" 
         for filter_val in [selected_month, selected_year, selected_shape, selected_color, selected_bucket]
     )
-    
+    variance_column = selected_variance_column
+    if variance_column == 'Current Average Cost':
+        variance_column = 'Buying Price Avg'
+    elif variance_column in ['None',None]:
+        variance_column = 'Max Buying Price'
+    else:
+        variance_column = selected_variance_column
     if all_filters_selected:
         display_detailed_metrics(display_df, selected_month, selected_year, selected_shape,
-                               selected_color, selected_bucket, selected_variance_column)
+                               selected_color, selected_bucket, variance_column)
     else:
         display_aggregated_metrics(display_df)
 
