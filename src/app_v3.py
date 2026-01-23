@@ -3862,11 +3862,26 @@ def normalize_bucket_names(df):
     try:
         if 'Buckets' in df.columns:
             df = df.copy()
+            # Handle all variations of the bucket names with or without spaces
             df['Buckets'] = df['Buckets'].replace({
                 '1.50-1.74': '1.50-1.99',
                 '1.75-1.99': '1.50-1.99',
-                '1.75 - 1.99': '1.50-1.99'
+                '1.50 - 1.74': '1.50-1.99',
+                '1.75 - 1.99': '1.50-1.99',
+                '1.50 -1.74': '1.50-1.99',
+                '1.75 -1.99': '1.50-1.99',
+                '1.50- 1.74': '1.50-1.99',
+                '1.75- 1.99': '1.50-1.99'
             })
+            # Also use string operations to catch any remaining variations
+            if df['Buckets'].dtype == 'object':
+                df['Buckets'] = df['Buckets'].apply(
+                    lambda x: '1.50-1.99' if isinstance(x, str) and
+                    ('1.50' in x or '1.75' in x) and
+                    ('1.74' in x or '1.99' in x) and
+                    x != '1.50-1.99'
+                    else x
+                )
         return df
     except Exception as e:
         logger.error(f"Error normalizing bucket names: {e}")
@@ -3976,18 +3991,21 @@ def optimized_save_data(df):
     """Stable data saving with proper compression handling"""
     try:
         df = apply_data_filters(df)
-        
+
+        # Normalize bucket names before saving to ensure consistency
+        df = normalize_bucket_names(df)
+
         # Ensure directory exists
         Path("src").mkdir(exist_ok=True)
-        
+
         file_path = r'C:\streamlit-app\src\kunmings.pkl'
-        
+
         # Save with consistent compression (or without compression for compatibility)
         df.to_pickle(file_path, compression=None)  # Changed to None for compatibility
-        
+
         # Clear relevant caches
         load_cached_master_dataset.clear()
-        
+
         logger.info("Data saved successfully")
     except Exception as e:
         logger.error(f"Error saving data: {e}")
