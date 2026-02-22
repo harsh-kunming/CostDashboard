@@ -26,3 +26,25 @@ color_map = {'Fancy Intense Yellow':'FIY',
              'W-X':'WXYZ',
              'Y-Z':'WXYZ'
 }
+
+
+def sort_buckets(bucket_list):
+    """
+    Sort bucket strings in ascending numerical order.
+
+    Args:
+        bucket_list: List of bucket strings (e.g., ['0.50-0.69', '10.00-14.99', '1.00-1.25'])
+
+    Returns:
+        List sorted by the starting numeric value of each bucket
+    """
+    def get_bucket_start_value(bucket_str):
+        """Extract the starting numeric value from a bucket string."""
+        try:
+            # Extract the first number before the dash
+            return float(bucket_str.split('-')[0])
+        except (ValueError, IndexError):
+            # If parsing fails, return a large number to sort it at the end
+            return float('inf')
+
+    return sorted(bucket_list, key=get_bucket_start_value)
