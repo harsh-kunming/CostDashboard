@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, Optional, List, Tuple
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from dataclasses import dataclass
 from io import BytesIO
 import streamlit as st
@@ -9,6 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from utility import *
+from chatbot import render_chatbot_main
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,13 @@ import logging
 from functools import lru_cache
 import hashlib
 import warnings
+import threading
+import time
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -25,6 +33,206 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # Configure logging for production
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ===== AUTOMATIC PATH DETECTION =====
+# Get the directory where this script is located
+SCRIPT_DIR = Path(__file__).parent
+# Build paths relative to the script location
+DATA_DIR = SCRIPT_DIR  # Since pkl files are in same folder as app_v3.py
+KUNMINGS_PKL_PATH = DATA_DIR / "kunmings.pkl"
+MAX_QTY_PKL_PATH = DATA_DIR / "max_qty.pkl"
+MIN_QTY_PKL_PATH = DATA_DIR / "min_qty.pkl"
+MAX_BUY_PKL_PATH = DATA_DIR / "max_buy.pkl"
+
+# ===== EMAIL CONFIGURATION =====
+EMAIL_CONFIG = {
+    'sender_email': 'harsh.kunming@gmail.com',
+    'sender_password': os.environ.get('EMAIL_PASSWORD', ''),  # Store password in environment variable
+    'recipient_email': 'himanshubirla.91@gmail.com',
+    'smtp_server': 'smtp.gmail.com',
+    'smtp_port': 587,
+    'send_day': 0,  # Monday (0=Monday, 6=Sunday)
+    'send_time': dt_time(9, 0)  # 9:00 AM
+}
+
+# Global flag to track if email was sent this week
+email_sent_tracker = {'last_sent_date': None}
+
+# ===== EMAIL AUTOMATION FUNCTIONS =====
+
+def generate_gap_report_excel():
+    """Generate GAP report Excel file for email"""
+    try:
+        # Load master dataset
+        master_df = load_cached_master_dataset()
+
+        if master_df is None or master_df.empty:
+            logger.warning("No master dataset available for GAP report")
+            return None
+
+        # Generate GAP summary for all products (no filters - get complete report)
+        gap_df = get_gap_summary_table(
+            master_df=master_df,
+            selected_month="None",
+            selected_year="None",
+            selected_shape="None",
+            selected_color="None",
+            selected_bucket="None"
+        )
+
+        if gap_df.empty:
+            logger.warning("GAP report is empty")
+            return None
+
+        # Filter to show only products below minimum quantity (GAP Value < 0)
+        gap_df_filtered = gap_df[gap_df['GAP Value'] < 0].copy()
+
+        if gap_df_filtered.empty:
+            logger.info("No products below minimum quantity - no email needed")
+            return None
+
+        # Sort by GAP Value (most critical first)
+        gap_df_filtered = gap_df_filtered.sort_values('GAP Value').reset_index(drop=True)
+
+        # Create Excel file in memory
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            gap_df_filtered.to_excel(writer, sheet_name='GAP Report', index=False)
+
+            # Auto-adjust column widths
+            worksheet = writer.sheets['GAP Report']
+            for idx, col in enumerate(gap_df_filtered.columns):
+                max_length = max(
+                    gap_df_filtered[col].astype(str).map(len).max(),
+                    len(col)
+                )
+                worksheet.column_dimensions[chr(65 + idx)].width = max_length + 2
+
+        output.seek(0)
+        return output.getvalue()
+
+    except Exception as e:
+        logger.error(f"Error generating GAP report: {e}")
+        return None
+
+
+def send_gap_report_email(excel_data):
+    """Send GAP report via email"""
+    try:
+        if not EMAIL_CONFIG['sender_password']:
+            logger.error("Email password not configured. Set EMAIL_PASSWORD environment variable.")
+            return False
+
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_CONFIG['sender_email']
+        msg['To'] = EMAIL_CONFIG['recipient_email']
+        msg['Subject'] = f"Weekly Inventory GAP Report - {datetime.now().strftime('%B %d, %Y')}"
+
+        # Email body
+        body = f"""
+Hello,
+
+Please find attached the Weekly Inventory GAP Report for {datetime.now().strftime('%B %d, %Y')}.
+
+This report shows all products that are currently below the minimum quantity threshold and require restocking.
+
+Best regards,
+Yellow Diamond Inventory System
+"""
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Attach Excel file
+        attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        attachment.set_payload(excel_data)
+        encoders.encode_base64(attachment)
+        attachment.add_header(
+            'Content-Disposition',
+            f'attachment; filename=GAP_Report_{datetime.now().strftime("%Y%m%d")}.xlsx'
+        )
+        msg.attach(attachment)
+
+        # Send email
+        with smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port']) as server:
+            server.starttls()
+            server.login(EMAIL_CONFIG['sender_email'], EMAIL_CONFIG['sender_password'])
+            server.send_message(msg)
+
+        logger.info(f"GAP report email sent successfully to {EMAIL_CONFIG['recipient_email']}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error sending email: {e}")
+        return False
+
+
+def check_and_send_weekly_report():
+    """Check if it's time to send the weekly report and send it"""
+    try:
+        now = datetime.now()
+        current_date = now.date()
+        current_time = now.time()
+        current_day = now.weekday()
+
+        # Check if it's the right day and time
+        if current_day != EMAIL_CONFIG['send_day']:
+            return
+
+        # Check if current time is within 1 hour of target time
+        target_time = EMAIL_CONFIG['send_time']
+        if not (target_time.hour <= current_time.hour < target_time.hour + 1):
+            return
+
+        # Check if email was already sent today
+        if email_sent_tracker['last_sent_date'] == current_date:
+            return
+
+        logger.info(f"Time to send weekly GAP report: {now}")
+
+        # Generate report
+        excel_data = generate_gap_report_excel()
+
+        if excel_data is None:
+            logger.info("No GAP report to send (either no data or no products below minimum)")
+            email_sent_tracker['last_sent_date'] = current_date
+            return
+
+        # Send email
+        success = send_gap_report_email(excel_data)
+
+        if success:
+            email_sent_tracker['last_sent_date'] = current_date
+            logger.info("Weekly GAP report sent successfully")
+
+    except Exception as e:
+        logger.error(f"Error in check_and_send_weekly_report: {e}")
+
+
+def email_scheduler_thread():
+    """Background thread that checks hourly for email sending"""
+    logger.info("Email scheduler thread started")
+
+    while True:
+        try:
+            check_and_send_weekly_report()
+            # Sleep for 1 hour before checking again
+            time.sleep(3600)
+        except Exception as e:
+            logger.error(f"Error in email scheduler thread: {e}")
+            time.sleep(3600)
+
+
+def start_email_scheduler():
+    """Start the email scheduler in a background thread"""
+    try:
+        # Check if scheduler is already running
+        if not hasattr(st.session_state, 'email_scheduler_started'):
+            thread = threading.Thread(target=email_scheduler_thread, daemon=True)
+            thread.start()
+            st.session_state.email_scheduler_started = True
+            logger.info("Email scheduler background thread initialized")
+    except Exception as e:
+        logger.error(f"Error starting email scheduler: {e}")
 
 # ===== STOCK TREND ANALYZER FUNCTIONS =====
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -504,7 +712,7 @@ def display_trend_analysis_section(master_df):
             with col3:
                 bucket_filter = st.selectbox(
                     "Filter by Bucket",
-                    ['All'] + sorted(df_analysis['Primary_Bucket'].unique().tolist()),
+                    ['All'] + sort_buckets(df_analysis['Primary_Bucket'].unique().tolist()),
                     key="trend_detail_bucket_filter"
                 )
             
@@ -627,7 +835,7 @@ def display_trend_analysis_section(master_df):
             with viz_col3:
                 viz_bucket_filter = st.selectbox(
                     "Filter by Bucket",
-                    ['All'] + sorted(df_analysis['Primary_Bucket'].unique().tolist()),
+                    ['All'] + sort_buckets(df_analysis['Primary_Bucket'].unique().tolist()),
                     key="viz_bucket_filter"
                 )
             
@@ -1358,7 +1566,7 @@ def display_optimized_recommendations_section(master_df):
             with adv_col1:
                 bucket_filter = st.selectbox(
                     "Filter by Bucket",
-                    ['All'] + sorted(master_df['Buckets'].unique().tolist()) if 'Buckets' in master_df.columns else ['All'],
+                    ['All'] + sort_buckets(master_df['Buckets'].unique().tolist()) if 'Buckets' in master_df.columns else ['All'],
                     key="opt_bucket_filter"
                 )
             
@@ -2685,9 +2893,16 @@ def initialize_session_state():
         },
         'optimization_result': None,
         'critical_products': [],
-        'budget_scenarios': {}
+        'budget_scenarios': {},
+        # CHATBOT STATE - Initialize early to ensure persistence across tab switches
+        'chatbot_history': [],
+        'chatbot_window_start': 0,
+        'show_chatbot': True,  # Changed from False to True - always show chatbot
+        'chatbot_enabled': True,
+        'chatbot_initialized': False,
+        'chatbot_tab_visited': False  # Legacy flag - now using columns so always visible
     }
-    
+
     for key, default_value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default_value
@@ -2697,7 +2912,7 @@ def initialize_session_state():
 def load_cached_master_dataset():
     """Load master dataset with proper compression handling"""
     try:
-        master_file_path = Path(r"C:\streamlit-app\src\kunmings.pkl")
+        master_file_path = KUNMINGS_PKL_PATH
         if master_file_path.exists():
             # Try loading with compression first (for files saved with gzip)
             try:
@@ -2784,9 +2999,9 @@ def apply_data_filters(df):
 def load_qty_dictionaries():
     """Cache loading of quantity dictionaries"""
     try:
-        max_qty_dict = joblib.load(r'C:\streamlit-app\src\max_qty.pkl')
-        min_qty_dict = joblib.load(r'C:\streamlit-app\src\min_qty.pkl')
-        max_buy_dict = joblib.load(r'C:\streamlit-app\src\max_buy.pkl')
+        max_qty_dict = joblib.load(MAX_QTY_PKL_PATH)
+        min_qty_dict = joblib.load(MIN_QTY_PKL_PATH)
+        max_buy_dict = joblib.load(MAX_BUY_PKL_PATH)
         return max_qty_dict, min_qty_dict, max_buy_dict
     except Exception as e:
         logger.error(f"Error loading qty dictionaries: {e}")
@@ -2858,7 +3073,14 @@ def get_gap_summary_stable(df_hash: str, filter_hash: str):
                                 min_qty = min_qty_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
                                 max_buying_price = max_buy_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
                                 gap_value = gap_analysis(max_qty, min_qty, 0)
-                                min_selling_price = 0
+                                min_selling_price = get_historical_min_selling_price(
+                                    master_df=master_df,
+                                    shape=shape,
+                                    color=color,
+                                    bucket=bucket,
+                                    current_month=month,
+                                    current_year=year
+                                )
                                 stock_in_hand = 0
                             
                             gap_summary.append({
@@ -2959,13 +3181,23 @@ def get_missing_products_analysis_cached(df_csv: str, month: str, year: int, sha
     try:
         from io import StringIO
         df = pd.read_csv(StringIO(df_csv))
-        
-        # Get all unique product IDs
-        all_product_ids = set(df['Product Id'].unique())
-        
+
+        # Get all unique product IDs with same filters applied (excluding month/year)
+        if shape != "None" or color != "None" or bucket != "None":
+            filter_mask = pd.Series([True] * len(df))
+            if shape != "None":
+                filter_mask &= (df['Shape key'] == shape)
+            if color != "None":
+                filter_mask &= (df['Color Key'] == color)
+            if bucket != "None":
+                filter_mask &= (df['Buckets'] == bucket)
+            all_product_ids = set(df[filter_mask]['Product Id'].unique())
+        else:
+            all_product_ids = set(df['Product Id'].unique())
+
         # Filter for selected month and year
         mask = (df['Month'] == month) & (df['Year'] == year)
-        
+
         # Apply additional filters if selected
         if shape != "None":
             mask &= (df['Shape key'] == shape)
@@ -2973,7 +3205,7 @@ def get_missing_products_analysis_cached(df_csv: str, month: str, year: int, sha
             mask &= (df['Color Key'] == color)
         if bucket != "None":
             mask &= (df['Buckets'] == bucket)
-        
+
         current_month_products = set(df[mask]['Product Id'].unique())
         
         # Find missing products
@@ -3159,13 +3391,13 @@ def display_missing_products_analysis(master_df, selected_month, selected_year, 
                 shape_filter = st.selectbox(
                     "Filter by Shape",
                     ['All'] + sorted(missing_df['Shape'].unique().tolist()),
-                    key="missing_shape_filter"
+                    key="detailed_missing_shape_filter"
                 )
             with col3:
                 color_filter = st.selectbox(
                     "Filter by Color",
                     ['All'] + sorted(missing_df['Color'].unique().tolist()),
-                    key="missing_color_filter"
+                    key="detailed_missing_color_filter"
                 )
             
             # Apply filters
@@ -3405,7 +3637,7 @@ def concatenate_first_two_rows(df):
 def update_max_qty(df_max_qty, json_data_name='max_qty.pkl'):
     """Stable max qty update with error handling"""
     try:
-        json_data_path = rf"C:\streamlit-app\src\{json_data_name}"
+        json_data_path = DATA_DIR / json_data_name
         
         # Try to load existing data
         try:
@@ -3862,11 +4094,26 @@ def normalize_bucket_names(df):
     try:
         if 'Buckets' in df.columns:
             df = df.copy()
+            # Handle all variations of the bucket names with or without spaces
             df['Buckets'] = df['Buckets'].replace({
                 '1.50-1.74': '1.50-1.99',
                 '1.75-1.99': '1.50-1.99',
-                '1.75 - 1.99': '1.50-1.99'
+                '1.50 - 1.74': '1.50-1.99',
+                '1.75 - 1.99': '1.50-1.99',
+                '1.50 -1.74': '1.50-1.99',
+                '1.75 -1.99': '1.50-1.99',
+                '1.50- 1.74': '1.50-1.99',
+                '1.75- 1.99': '1.50-1.99'
             })
+            # Also use string operations to catch any remaining variations
+            if df['Buckets'].dtype == 'object':
+                df['Buckets'] = df['Buckets'].apply(
+                    lambda x: '1.50-1.99' if isinstance(x, str) and
+                    ('1.50' in x or '1.75' in x) and
+                    ('1.74' in x or '1.99' in x) and
+                    x != '1.50-1.99'
+                    else x
+                )
         return df
     except Exception as e:
         logger.error(f"Error normalizing bucket names: {e}")
@@ -3905,6 +4152,99 @@ def gap_analysis(max_qty, min_qty, stock_in_hand):
         else:
             return 0
     except:
+        return 0
+
+def generate_previous_months(current_month: str, current_year: int, lookback_count: int) -> List[Tuple[str, int]]:
+    """Generate list of (month_name, year) tuples going backwards chronologically."""
+    try:
+        if current_month not in month_map:
+            return []
+
+        current_month_num = month_map[current_month]
+        num_to_month = {v: k for k, v in month_map.items()}
+
+        previous_months = []
+        month_num = current_month_num
+        year = current_year
+
+        for _ in range(lookback_count):
+            month_num -= 1
+            if month_num < 1:
+                month_num = 12
+                year -= 1
+            previous_months.append((num_to_month[month_num], year))
+
+        return previous_months
+    except Exception as e:
+        logger.error(f"Error generating previous months: {e}")
+        return []
+
+
+@st.cache_data(show_spinner=False)
+def get_historical_min_selling_price_cached(df_hash: str, shape: str, color: str,
+                                            bucket: str, current_month: str,
+                                            current_year: int, max_lookback: int = 12) -> int:
+    """Cached historical price lookup."""
+    try:
+        master_df = st.session_state.get('master_df', pd.DataFrame())
+        if master_df.empty:
+            return 0
+
+        # Pre-filter for shape/color/bucket
+        mask = (
+            (master_df['Shape key'] == shape) &
+            (master_df['Color Key'] == color) &
+            (master_df['Buckets'] == bucket)
+        )
+        historical_data = master_df[mask]
+
+        if historical_data.empty:
+            return 0
+
+        # Search backwards through months
+        previous_months = generate_previous_months(current_month, current_year, max_lookback)
+
+        for month, year in previous_months:
+            month_mask = (
+                (historical_data['Month'] == month) &
+                (historical_data['Year'] == year)
+            )
+            month_data = historical_data[month_mask]
+
+            if not month_data.empty and 'Min Selling Price' in month_data.columns:
+                prices = month_data['Min Selling Price'].dropna()
+                if not prices.empty:
+                    return int(prices.min())
+
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error getting historical min selling price: {e}")
+        return 0
+
+
+def get_historical_min_selling_price(master_df: pd.DataFrame, shape: str, color: str,
+                                     bucket: str, current_month: str, current_year: int) -> int:
+    """Wrapper for historical price lookup with caching."""
+    try:
+        if master_df.empty:
+            return 0
+
+        # Create stable hash for caching
+        df_hash = hashlib.md5(str(len(master_df)).encode()).hexdigest()
+
+        return get_historical_min_selling_price_cached(
+            df_hash=df_hash,
+            shape=shape,
+            color=color,
+            bucket=bucket,
+            current_month=current_month,
+            current_year=current_year,
+            max_lookback=12
+        )
+
+    except Exception as e:
+        logger.error(f"Error in historical price lookup wrapper: {e}")
         return 0
 
 def get_quarter(month):
@@ -3976,18 +4316,21 @@ def optimized_save_data(df):
     """Stable data saving with proper compression handling"""
     try:
         df = apply_data_filters(df)
-        
+
+        # Normalize bucket names before saving to ensure consistency
+        df = normalize_bucket_names(df)
+
         # Ensure directory exists
-        Path("src").mkdir(exist_ok=True)
-        
-        file_path = r'C:\streamlit-app\src\kunmings.pkl'
-        
+        DATA_DIR.mkdir(exist_ok=True)
+
+        file_path = KUNMINGS_PKL_PATH
+
         # Save with consistent compression (or without compression for compatibility)
         df.to_pickle(file_path, compression=None)  # Changed to None for compatibility
-        
+
         # Clear relevant caches
         load_cached_master_dataset.clear()
-        
+
         logger.info("Data saved successfully")
     except Exception as e:
         logger.error(f"Error saving data: {e}")
@@ -4137,13 +4480,20 @@ def optimized_get_filtered_data(filter_month, filter_year, filter_shape, filter_
             max_qty_dict, min_qty_dict, max_buy_dict = load_qty_dictionaries()
             filter_shape_color = f"{filter_shape}_{filter_color}"
             join_key = f"{filter_month}-{int(filter_year) - 2000}"
-            
+
             max_buying_price = max_buy_dict.get(filter_shape_color, {}).get(join_key, {}).get(filter_bucket, 0)
             latest_month_max = list(max_qty_dict[filter_shape_color].keys())[-1]
             max_qty = max_qty_dict[filter_shape_color][latest_month_max].get(filter_bucket, 0)
             min_qty = min_qty_dict.get(filter_shape_color, {}).get(join_key, {}).get(filter_bucket, 0)
             current_avg_cost = 0
-            min_selling_price = 0
+            min_selling_price = get_historical_min_selling_price(
+                master_df=master_df,
+                shape=filter_shape,
+                color=filter_color,
+                bucket=filter_bucket,
+                current_month=filter_month,
+                current_year=int(filter_year)
+            )
             qaurter_change = 0
             Monthly_change = 0
             mom_variance = 0
@@ -4385,9 +4735,15 @@ def main():
     """Optimized main application function with stable UI"""
     try:
         st.set_page_config(page_title="Yellow Diamond Dashboard", layout="wide")
+
+        # Create header
         st.title("Yellow Diamond Dashboard")
+
         st.markdown("Upload Excel files to process multiple sheets and filter data.")
-        
+
+        # Start email scheduler (runs in background)
+        start_email_scheduler()
+
         # Initialize session state
         initialize_session_state()
         
@@ -4410,7 +4766,7 @@ def main():
                     # Add recovery option
                     if st.button("Clear Corrupted Database"):
                         try:
-                            corrupted_file = Path(r"C:\streamlit-app\src\kunmings.pkl")
+                            corrupted_file = KUNMINGS_PKL_PATH
                             if corrupted_file.exists():
                                 corrupted_file.unlink()
                                 st.success("Corrupted database cleared. Please upload a new file.")
@@ -4427,27 +4783,129 @@ def main():
             st.sidebar.success(f"Master DB: {len(st.session_state.master_df):,} records")
         else:
             st.sidebar.warning("No master database found")
-        
+
         # File upload section - Fixed for older Streamlit versions
         uploaded_file = st.sidebar.file_uploader(
             "Upload Excel File",
             type=['xlsx', 'xls'],
             help="Upload an Excel file with multiple sheets"
         )
-        
+
         # Process uploaded file
         if uploaded_file is not None and not st.session_state.data_processed:
             process_uploaded_file(uploaded_file)
-        
+
         # Display upload history in sidebar
         display_upload_history()
-        
-        # Dashboard display
-        if not st.session_state.master_df.empty:
-            display_dashboard()
-        else:
-            st.info("No data in master database. Upload an Excel file to get started!")
-        
+
+        st.markdown("---")
+
+        # Create tabs for Dashboard and AI Assistant
+        # Each tab renders independently, so chatbot is always accessible
+        dashboard_tab, assistant_tab = st.tabs(["📊 Dashboard", "🤖 AI Assistant"])
+
+        # Dashboard Tab
+        with dashboard_tab:
+            st.markdown("### 📊 Dashboard")
+            # Dashboard display
+            if not st.session_state.master_df.empty:
+                display_dashboard()
+            else:
+                st.info("No data in master database. Upload an Excel file to get started!")
+
+        # AI Assistant Tab - Always renders independently
+        with assistant_tab:
+            # Mark chatbot as active when tab is visited
+            st.session_state.chatbot_tab_visited = True
+
+            st.markdown("<h2 style='text-align: center; font-weight: bold;'>🤖 Ask Me Anything</h2>", unsafe_allow_html=True)
+
+            # Show helpful message about data status
+            if st.session_state.master_df.empty:
+                st.info("💡 Upload an Excel file to enable data-based queries. You can still ask general questions!")
+            else:
+                st.success(f"✅ Data loaded: {len(st.session_state.master_df):,} records available")
+
+            # Add custom CSS for styled textbox
+            st.markdown("""
+                <style>
+                /* Style for the chat input textbox */
+                .stTextInput > div > div > input {
+                    border: 3px solid;
+                    border-image: linear-gradient(90deg, white 0%, green 50%, white 100%) 1;
+                    border-radius: 8px;
+                    padding: 12px;
+                    font-weight: bold;
+                    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+                }
+
+                /* Alternative approach with double border effect */
+                div[data-testid="stTextInput"] > div {
+                    border: 2px solid white;
+                    border-radius: 10px;
+                    padding: 2px;
+                    background: linear-gradient(white, white) padding-box,
+                                linear-gradient(90deg, green, white, green) border-box;
+                }
+
+                div[data-testid="stTextInput"] input {
+                    border: 2px solid green !important;
+                    border-radius: 8px !important;
+                    font-weight: bold !important;
+                    padding: 10px !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+
+            # Load additional datasets for chatbot with error handling
+            max_qty_df = pd.DataFrame()
+            min_qty_df = pd.DataFrame()
+            max_buy_df = pd.DataFrame()
+
+            try:
+                max_qty_dict, min_qty_dict, max_buy_dict = load_qty_dictionaries()
+                max_qty_df = pd.DataFrame(list(max_qty_dict.items()), columns=['Key', 'Max_Quantity']) if max_qty_dict else pd.DataFrame()
+                min_qty_df = pd.DataFrame(list(min_qty_dict.items()), columns=['Key', 'Min_Quantity']) if min_qty_dict else pd.DataFrame()
+                max_buy_df = pd.DataFrame(list(max_buy_dict.items()), columns=['Key', 'Max_Buy']) if max_buy_dict else pd.DataFrame()
+            except Exception as e:
+                logger.warning(f"Could not load quantity dictionaries: {e}")
+                # Continue with empty dataframes - chatbot should still render
+
+            # CRITICAL: ALWAYS render chatbot interface - this should NEVER be skipped
+            # regardless of data availability, errors, or any other condition
+            try:
+                logger.info(f"Attempting to render chatbot with master_df: {len(st.session_state.master_df)} rows")
+
+                # Ensure we pass valid dataframes (not None)
+                safe_master_df = st.session_state.master_df if (hasattr(st.session_state, 'master_df') and
+                                                                 st.session_state.master_df is not None and
+                                                                 not st.session_state.master_df.empty) else pd.DataFrame()
+
+                # Render chatbot in AI Assistant tab - renders independently when tab is clicked
+                render_chatbot_main(
+                    safe_master_df,
+                    max_qty_df,
+                    min_qty_df,
+                    max_buy_df
+                )
+
+                logger.info("Chatbot rendered successfully")
+
+            except Exception as e:
+                # Even if chatbot rendering fails, show a helpful error message
+                logger.error(f"Critical error rendering chatbot: {e}")
+                st.error(f"Error loading AI Assistant: {str(e)}")
+                st.info("Please try refreshing the page. If the issue persists, try the following:")
+                st.markdown("""
+                1. Refresh the page (F5)
+                2. Clear your browser cache
+                3. Upload a data file if you haven't already
+                """)
+
+                # Show a minimal chat interface even if there's an error
+                st.markdown("---")
+                st.text_input("Chat input (temporarily unavailable)", disabled=True, key="fallback_input")
+
         # Sidebar control buttons
         create_sidebar_controls(uploaded_file)
             
@@ -4660,28 +5118,122 @@ def format_file_size(size_bytes):
     except:
         return "Unknown"
 
+def display_trend_analysis_tab(master_df):
+    """Display Trend Analysis in a separate tab with filters"""
+    try:
+        st.header("📉 Variance Trend Analysis")
+        st.markdown("Analyze variance trends across different dimensions")
+
+        # Create filter controls
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
+
+        # Get unique values with stable sorting
+        with col1:
+            months = ["None"] + sort_months_stable(tuple(master_df['Month'].unique()))
+            selected_month = st.selectbox("Filter by Month", months, key="trend_month_filter")
+        with col2:
+            years = ["None"] + sorted(list(master_df['Year'].unique()))
+            selected_year = st.selectbox("Filter by Year", years, key="trend_year_filter")
+        with col3:
+            shapes = ["None"] + sorted(list(master_df['Shape key'].unique()))
+            selected_shape = st.selectbox("Filter by Shape", shapes, key="trend_shape_filter")
+        with col4:
+            colors = ["None"] + ['WXYZ', 'FLY', 'FY', 'FIY', 'FVY']
+            selected_color = st.selectbox("Filter by Color", colors, key="trend_color_filter")
+        with col5:
+            buckets = ["None"] + sort_buckets(list(stock_bucket.keys()))
+            selected_bucket = st.selectbox("Filter by Bucket", buckets, key="trend_bucket_filter")
+        with col6:
+            variance_columns = ["None", 'Current Average Cost', 'Max Buying Price', 'Min Selling Price']
+            selected_variance_column = st.selectbox("Select Variance Column", variance_columns, key="trend_variance_filter")
+
+        st.markdown("---")
+
+        # Display visualizations
+        display_visualizations(master_df, selected_shape, selected_color, selected_bucket,
+                             selected_variance_column, selected_month, selected_year)
+
+    except Exception as e:
+        st.error(f"Error in trend analysis tab: {str(e)}")
+        logger.error(f"Error in trend analysis tab: {e}")
+
+def display_missing_products_tab(master_df):
+    """Display Missing Products Analysis in a separate tab with filters"""
+    try:
+        st.header("🔍 Missing Products Analysis")
+        st.markdown("Identify products that are missing from specific months")
+
+        # Create filter controls
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        # Get unique values with stable sorting
+        with col1:
+            months = ["None"] + sort_months_stable(tuple(master_df['Month'].unique()))
+            selected_month = st.selectbox("Filter by Month", months, index=0, key="missing_month_filter")
+        with col2:
+            years = ["None"] + sorted(list(master_df['Year'].unique()))
+            selected_year = st.selectbox("Filter by Year", years, index=0, key="missing_year_filter")
+        with col3:
+            shapes = ["None"] + sorted(list(master_df['Shape key'].unique()))
+            selected_shape = st.selectbox("Filter by Shape", shapes, index=0, key="missing_shape_filter")
+        with col4:
+            colors = ["None"] + ['WXYZ', 'FLY', 'FY', 'FIY', 'FVY']
+            selected_color = st.selectbox("Filter by Color", colors, index=0, key="missing_color_filter")
+        with col5:
+            buckets = ["None"] + sort_buckets(list(stock_bucket.keys()))
+            selected_bucket = st.selectbox("Filter by Bucket", buckets, index=0, key="missing_bucket_filter")
+
+        st.markdown("---")
+
+        # Display missing products analysis only if month and year are selected
+        if selected_month != "None" and selected_year != "None":
+            display_missing_products_analysis(master_df, selected_month, int(selected_year),
+                                             selected_shape, selected_color, selected_bucket)
+        else:
+            st.info("⚠️ Please select both Month and Year to view missing products analysis.")
+
+    except Exception as e:
+        st.error(f"Error in missing products tab: {str(e)}")
+        logger.error(f"Error in missing products tab: {e}")
+
 def display_dashboard():
     """Display main dashboard with stable components"""
     try:
         # Create main tabs for different sections
-        main_tab1, main_tab2, main_tab3 = st.tabs([
-            "📊 Dashboard & GAP Analysis", 
+        main_tab1, main_tab2, main_tab3, main_tab4, main_tab5 = st.tabs([
+            "📊 Dashboard & GAP Analysis",
             "📈 Stock Trend Analysis",
+            "📉 Trend Analysis",
+            "🔍 Missing Products Analysis",
             "🔬 Optimized Inventory Recommendations"
         ])
         
         with main_tab1:
             # Original dashboard content
             display_original_dashboard()
-        
+
         with main_tab2:
-            # Trend analysis section
+            # Stock trend analysis section
             if not st.session_state.master_df.empty:
                 display_trend_analysis_section(st.session_state.master_df)
             else:
                 st.info("No data available. Please upload an Excel file to run trend analysis.")
-        
+
         with main_tab3:
+            # Trend Analysis section (moved from Dashboard tab)
+            if not st.session_state.master_df.empty:
+                display_trend_analysis_tab(st.session_state.master_df)
+            else:
+                st.info("No data available. Please upload an Excel file to view trend analysis.")
+
+        with main_tab4:
+            # Missing Products Analysis section (moved from Dashboard tab)
+            if not st.session_state.master_df.empty:
+                display_missing_products_tab(st.session_state.master_df)
+            else:
+                st.info("No data available. Please upload an Excel file to analyze missing products.")
+
+        with main_tab5:
             # Optimized recommendations section
             if not st.session_state.master_df.empty:
                 display_optimized_recommendations_section(st.session_state.master_df)
@@ -4714,7 +5266,7 @@ def display_original_dashboard():
             colors = ["None"] + ['WXYZ', 'FLY', 'FY', 'FIY', 'FVY']
             selected_color = st.selectbox("Filter by Color", colors, key="color_filter")
         with col5:
-            buckets = ["None"] + sorted(list(stock_bucket.keys()))
+            buckets = ["None"] + sort_buckets(list(stock_bucket.keys()))
             selected_bucket = st.selectbox("Filter by Bucket", buckets, key="bucket_filter")
         with col6:
             variance_columns = ["None", 'Current Average Cost', 'Max Buying Price', 'Min Selling Price']
@@ -4740,19 +5292,10 @@ def display_original_dashboard():
         display_data_table(display_df)
 
         # Display download options
-        display_download_options(display_df, master_df)
+        display_download_options(display_df, master_df, selected_shape, selected_bucket)
 
         # Display GAP summary with stable rendering - FIXED
         display_gap_summary_stable(master_df, selected_month, selected_year, selected_shape, selected_color, selected_bucket)
-
-        # Display visualizations (Trend Analysis)
-        display_visualizations(master_df, selected_shape, selected_color, selected_bucket,
-                             selected_variance_column, selected_month, selected_year)
-
-        # Display missing products analysis for selected month (comes last)
-        if selected_month != "None" and selected_year != "None":
-            display_missing_products_analysis(master_df, selected_month, int(selected_year),
-                                             selected_shape, selected_color, selected_bucket)
         
     except Exception as e:
         st.error(f"Error in original dashboard display: {str(e)}")
@@ -4822,18 +5365,25 @@ def display_detailed_metrics(filter_data, selected_month, selected_year, selecte
         metric_cols = st.columns(7)
 
         metrics_data = [
-            ("Gap Analysis", f"{int(gap_output)}"),
-            ("Max Buying Price", f"${int(max_buying_price):,}"),
-            ("Min Selling Price", f"${int(min_selling_price):,}"),
-            ("Current Avg Cost", f"${int(current_avg_cost):,}"),
-            ("MOM Variance", f"{int(mom_variance):,}%"),
-            ("MOM % Change", f"{int(mom_percent_change)}%"),
-            ("QoQ % Change", f"{int(mom_qoq_percent_change)}%")
+            ("Gap Analysis", f"{int(gap_output)}",
+             "Shows if you have too much (+) or too little (-) stock. Positive means overstocked, negative means understocked."),
+            ("Max Buying Price", f"${int(max_buying_price):,}",
+             "The highest price paid to buy this product in the selected month and year."),
+            ("Min Selling Price", f"${int(min_selling_price):,}",
+             "The lowest price at which this product was sold in the selected month and year."),
+            ("Current Avg Cost", f"${int(current_avg_cost):,}",
+             "Average cost of the product calculated by dividing total cost by total weight, then reduced by 10%."),
+            ("MOM Variance", f"{int(mom_variance):,}%",
+             "Shows how much (in %) the current value is different from the monthly average."),
+            ("MOM % Change", f"{int(mom_percent_change)}%",
+             "Percentage change in value compared to last month. Positive means it went up, negative means it went down."),
+            ("QoQ % Change", f"{int(mom_qoq_percent_change)}%",
+             "Percentage change in value compared to 3 months ago (one quarter back).")
         ]
 
-        for i, (label, value) in enumerate(metrics_data):
+        for i, (label, value, help_text) in enumerate(metrics_data):
             with metric_cols[i]:
-                st.metric(label, value)
+                st.metric(label, value, help=help_text)
                 
     except Exception as e:
         st.error(f"Error calculating detailed metrics: {str(e)}")
@@ -4846,16 +5396,20 @@ def display_aggregated_metrics(display_df):
 
             with col1:
                 avg_max_buying = display_df['Max Buying Price'].mean()
-                st.metric("Avg Max Buying Price", f"${int(avg_max_buying):,}")
+                st.metric("Avg Max Buying Price", f"${int(avg_max_buying):,}",
+                         help="Add up all the highest buying prices and divide by number of products to get the average.")
             with col2:
                 avg_min_selling = display_df['Min Selling Price'].mean()
-                st.metric("Avg Min Selling Price", f"${int(avg_min_selling):,}")
+                st.metric("Avg Min Selling Price", f"${int(avg_min_selling):,}",
+                         help="Add up all the lowest selling prices and divide by number of products to get the average.")
             with col3:
                 total_weight = display_df['Weight'].sum()
-                st.metric("Total Weight", f"{int(total_weight):,}")
+                st.metric("Total Weight", f"{int(total_weight):,}",
+                         help="Add up the weight of all products shown in the current filters.")
             with col4:
                 total_products = len(display_df)
-                st.metric("Total Products", f"{total_products:,}")
+                st.metric("Total Products", f"{total_products:,}",
+                         help="Count how many products match your current filter choices.")
 
             st.info("Select all filters to view detailed metrics including Gap Analysis.")
         except Exception as e:
@@ -4926,8 +5480,8 @@ def display_gap_summary_stable(master_df, selected_month, selected_year, selecte
 
 def display_gap_download_options(gap_summary_df, filter_hash):
     """Display download options for GAP summary with stable keys"""
-    st.subheader("Download GAP Summary")
-    
+    st.markdown("#### Download GAP Summary")
+
     try:
         # Prepare download data
         gap_csv = gap_summary_df.to_csv(index=False)
@@ -5048,10 +5602,10 @@ def display_data_table(display_df):
     except Exception as e:
         st.error(f"Error displaying data table: {str(e)}")
 
-def display_download_options(display_df, master_df):
+def display_download_options(display_df, master_df, selected_shape="None", selected_size="None"):
     """Display download options with stable keys"""
-    col1, col2 = st.columns(2)
-    
+    col1, col2, col3 = st.columns(3)
+
     with col1:
         st.subheader("Download Filtered Data")
         try:
@@ -5059,10 +5613,10 @@ def display_download_options(display_df, master_df):
                 download_columns = ['Product Id', 'Shape key', 'Color Key', 'Avg Cost Total',
                                   'Min Qty', 'Max Qty', 'Buying Price Avg', 'Max Buying Price']
                 available_columns = [col for col in download_columns if col in display_df.columns]
-                
+
                 download_df = display_df[available_columns]
                 csv = download_df.to_csv(index=False)
-                
+
                 st.download_button(
                     label="Download Filtered Data as CSV",
                     data=csv,
@@ -5075,13 +5629,13 @@ def display_download_options(display_df, master_df):
                 st.info("No filtered data available for download")
         except Exception as e:
             st.error(f"Error preparing download: {str(e)}")
-    
+
     with col2:
         st.subheader("Download Master Data")
         try:
             if not master_df.empty:
                 csv = master_df.to_csv(index=False)
-                
+
                 st.download_button(
                     label="Download Master Data as CSV",
                     data=csv,
@@ -5094,6 +5648,55 @@ def display_download_options(display_df, master_df):
                 st.info("No master data available for download")
         except Exception as e:
             st.error(f"Error preparing master download: {str(e)}")
+
+    with col3:
+        st.subheader("Download by Shape & Size")
+        try:
+            if not master_df.empty:
+                # Filter master data by Shape and Size (Bucket)
+                filtered_master_df = master_df.copy()
+
+                # Apply Shape filter
+                if selected_shape != "None" and 'Shape key' in filtered_master_df.columns:
+                    filtered_master_df = filtered_master_df[filtered_master_df['Shape key'] == selected_shape]
+
+                # Apply Size filter (Buckets column)
+                if selected_size != "None" and 'Buckets' in filtered_master_df.columns:
+                    filtered_master_df = filtered_master_df[filtered_master_df['Buckets'] == selected_size]
+
+                if not filtered_master_df.empty:
+                    csv = filtered_master_df.to_csv(index=False)
+
+                    # Create descriptive filename
+                    shape_str = selected_shape if selected_shape != "None" else "All"
+                    size_str = selected_size if selected_size != "None" else "All"
+                    filename = f"master_shape_{shape_str}_size_{size_str}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+                    st.download_button(
+                        label="Download Master (Shape+Size)",
+                        data=csv,
+                        file_name=filename,
+                        mime="text/csv",
+                        key="download_master_shape_size"
+                    )
+                    st.info(f"Records: {len(filtered_master_df):,}")
+
+                    # Show filter info
+                    if selected_shape != "None" or selected_size != "None":
+                        filter_info = []
+                        if selected_shape != "None":
+                            filter_info.append(f"Shape: {selected_shape}")
+                        if selected_size != "None":
+                            filter_info.append(f"Size: {selected_size}")
+                        st.caption(f"Filters: {', '.join(filter_info)}")
+                    else:
+                        st.caption("No filters applied")
+                else:
+                    st.info("No data matches selected Shape & Size filters")
+            else:
+                st.info("No master data available for download")
+        except Exception as e:
+            st.error(f"Error preparing Shape+Size download: {str(e)}")
 
 def create_sidebar_controls(uploaded_file):
     """Create sidebar controls with stable behavior"""
