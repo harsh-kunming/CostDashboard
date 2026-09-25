@@ -3064,7 +3064,7 @@ def get_gap_summary_stable(df_hash: str, filter_hash: str):
                                 min_qty = int(filtered_data['Min Qty'].min())
                                 stock_in_hand = len(filtered_data)
                                 gap_value = gap_analysis(max_qty, min_qty, stock_in_hand)
-                                min_selling_price = int(filtered_data['Min Selling Price'].max())
+                                # min_selling_price calculation removed - not needed in GAP report
                                 max_buying_price = int(filtered_data['Max Buying Price'].max())
                             else:
                                 # Use cached dictionaries
@@ -3073,14 +3073,7 @@ def get_gap_summary_stable(df_hash: str, filter_hash: str):
                                 min_qty = min_qty_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
                                 max_buying_price = max_buy_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
                                 gap_value = gap_analysis(max_qty, min_qty, 0)
-                                min_selling_price = get_historical_min_selling_price(
-                                    master_df=master_df,
-                                    shape=shape,
-                                    color=color,
-                                    bucket=bucket,
-                                    current_month=month,
-                                    current_year=year
-                                )
+                                # min_selling_price calculation removed - not needed in GAP report
                                 stock_in_hand = 0
                             
                             gap_summary.append({
@@ -3094,12 +3087,32 @@ def get_gap_summary_stable(df_hash: str, filter_hash: str):
                                 'Stock in Hand': stock_in_hand,
                                 'GAP Value': int(gap_value),
                                 'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate',
-                                'Min Selling Price': min_selling_price,
                                 'Max Buying Price': max_buying_price
                             })
         
         if gap_summary:
             result_df = pd.DataFrame(gap_summary)
+
+            # Filter out invalid rows where all key metrics are 0
+            # This indicates data quality issues (unmapped colors, missing data)
+            valid_rows_mask = ~(
+                (result_df['Color'] == 0) &
+                (result_df['Max Qty'] == 0) &
+                (result_df['Min Qty'] == 0) &
+                (result_df['Stock in Hand'] == 0) &
+                (result_df['GAP Value'] == 0) &
+                (result_df['Max Buying Price'] == 0)
+            )
+            result_df = result_df[valid_rows_mask]
+
+            # Log filtering results
+            removed_count = len(gap_summary) - len(result_df)
+            if removed_count > 0:
+                logger.info(f"GAP Summary: Filtered out {removed_count} invalid rows (Color=0, all metrics=0)")
+
+            # Add calculated columns: Average Bucket Size and Budget
+            result_df = add_gap_summary_calculated_columns(result_df)
+
             return result_df.sort_values(by=['Shape', 'Color', 'Bucket']).reset_index(drop=True)
         else:
             return pd.DataFrame()
@@ -3253,8 +3266,27 @@ def get_missing_products_analysis_cached(df_csv: str, month: str, year: int, sha
                 })
         
         missing_df = pd.DataFrame(missing_details)
-        
+
         if not missing_df.empty:
+            # Filter out invalid rows where all key metrics are 0
+            # This indicates data quality issues (unmapped colors, missing data)
+            valid_rows_mask = ~(
+                (missing_df['Color'] == 0) &
+                (missing_df['Last Max Qty'] == 0) &
+                (missing_df['Last Min Qty'] == 0) &
+                (missing_df['Last Weight'] == 0) &
+                (missing_df['Last Avg Cost'] == 0) &
+                (missing_df['Max Buying Price'] == 0) &
+                (missing_df['Min Selling Price'] == 0)
+            )
+            original_count = len(missing_df)
+            missing_df = missing_df[valid_rows_mask]
+
+            # Log filtering results
+            removed_count = original_count - len(missing_df)
+            if removed_count > 0:
+                logger.info(f"Missing Products: Filtered out {removed_count} invalid rows (Color=0, all metrics=0)")
+
             # Sort by months missing (descending) to show longest missing first
             missing_df = missing_df.sort_values('Months Missing', ascending=False)
             
@@ -4144,7 +4176,7 @@ def gap_analysis(max_qty, min_qty, stock_in_hand):
         max_qty = float(max_qty) if pd.notna(max_qty) else 0
         min_qty = float(min_qty) if pd.notna(min_qty) else 0
         stock_in_hand = float(stock_in_hand) if pd.notna(stock_in_hand) else 0
-        
+
         if stock_in_hand > max_qty:
             return stock_in_hand - max_qty
         elif stock_in_hand < min_qty:
@@ -4153,6 +4185,191 @@ def gap_analysis(max_qty, min_qty, stock_in_hand):
             return 0
     except:
         return 0
+
+def filter_invalid_data_rows(df, filter_config):
+    """
+    Filter out invalid rows where all specified columns equal their check values.
+
+    This function removes rows that represent data quality issues, such as:
+    - Unmapped colors (Color = 0)
+    - Missing historical data (all quantities = 0)
+    - No product information (all metrics = 0)
+
+    Args:
+        df (pd.DataFrame): DataFrame to filter
+        filter_config (dict): Dictionary mapping column names to values to check
+                             Example: {'Color': 0, 'Max Qty': 0, 'Min Qty': 0}
+                             A row is removed only if ALL specified columns equal their check values
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame with invalid rows removed
+
+    Example:
+        >>> config = {'Color': 0, 'Max Qty': 0, 'Min Qty': 0, 'Stock in Hand': 0}
+        >>> filtered_df = filter_invalid_data_rows(gap_df, config)
+        >>> # Removes rows where Color=0 AND Max Qty=0 AND Min Qty=0 AND Stock in Hand=0
+    """
+    if df.empty:
+        return df
+
+    try:
+        # Build conditions: each column must equal its check value
+        conditions = []
+        for col, check_value in filter_config.items():
+            if col in df.columns:
+                conditions.append(df[col] == check_value)
+
+        if conditions:
+            # Invalid rows: ALL conditions are True (all specified columns match check values)
+            # We use AND logic (all) because we only want to filter rows where everything is problematic
+            invalid_mask = pd.concat(conditions, axis=1).all(axis=1)
+
+            # Keep valid rows (negate the mask)
+            valid_df = df[~invalid_mask].reset_index(drop=True)
+
+            # Log filtering results
+            removed_count = len(df) - len(valid_df)
+            if removed_count > 0:
+                logger.info(f"Filtered out {removed_count} invalid rows where all of {list(filter_config.keys())} matched check values")
+
+            return valid_df
+
+        # If no valid conditions, return original DataFrame
+        return df
+
+    except Exception as e:
+        logger.error(f"Error filtering invalid rows: {e}")
+        # Return original DataFrame on error to prevent data loss
+        return df
+
+def calculate_average_bucket_size(bucket_str):
+    """
+    Calculate average of bucket range (lower_bound + upper_bound) / 2
+
+    Args:
+        bucket_str (str): Bucket string like '1.00-1.25', '0.50-0.69', or 'Other'
+
+    Returns:
+        float: Average bucket size, or 'Other' if bucket is 'Other' or invalid
+
+    Examples:
+        >>> calculate_average_bucket_size('1.00-1.25')
+        1.125
+        >>> calculate_average_bucket_size('0.50-0.69')
+        0.595
+        >>> calculate_average_bucket_size('Other')
+        'Other'
+    """
+    if bucket_str is None or pd.isna(bucket_str):
+        return 'Other'
+
+    # Convert to string and strip whitespace
+    bucket_str = str(bucket_str).strip()
+
+    # Check if it's 'Other' (case insensitive)
+    if bucket_str.lower() == 'other':
+        return 'Other'
+
+    try:
+        # Split by dash and handle spaces
+        parts = bucket_str.split('-')
+
+        if len(parts) == 2:
+            # Extract numeric values, handling spaces
+            lower = float(parts[0].strip())
+            upper = float(parts[1].strip())
+
+            # Calculate average and round to 3 decimal places
+            average = (lower + upper) / 2
+            return round(average, 3)
+        else:
+            # Invalid format
+            return 'Other'
+
+    except (ValueError, AttributeError):
+        # If parsing fails, return 'Other'
+        return 'Other'
+
+def add_gap_summary_calculated_columns(gap_df):
+    """
+    Add calculated columns to GAP summary dataframe:
+    - Average Bucket Size: (lower_bound + upper_bound) / 2
+    - Budget: Max Buying Price × Average Bucket Size × abs(GAP Value)
+
+    Args:
+        gap_df (pd.DataFrame): GAP summary dataframe
+
+    Returns:
+        pd.DataFrame: GAP summary with added columns
+
+    Required columns in input:
+        - Bucket
+        - Max Buying Price
+        - GAP Value
+    """
+    if gap_df.empty:
+        return gap_df
+
+    result_df = gap_df.copy()
+
+    try:
+        # Calculate Average Bucket Size
+        if 'Bucket' in result_df.columns:
+            result_df['Average Bucket Size'] = result_df['Bucket'].apply(calculate_average_bucket_size)
+        else:
+            logger.warning("'Bucket' column not found, setting Average Bucket Size to 'Other'")
+            result_df['Average Bucket Size'] = 'Other'
+
+        # Calculate Budget
+        if all(col in result_df.columns for col in ['Max Buying Price', 'GAP Value', 'Average Bucket Size']):
+            def calculate_budget(row):
+                """Calculate budget for a row"""
+                max_buying_price = row.get('Max Buying Price', 0)
+                gap_value = row.get('GAP Value', 0)
+                avg_bucket_size = row.get('Average Bucket Size', 0)
+
+                # Handle 'Other' bucket size
+                if avg_bucket_size == 'Other' or pd.isna(avg_bucket_size):
+                    return 0.0
+
+                try:
+                    # Budget = Max Buying Price × Average Bucket Size × abs(GAP Value)
+                    budget = float(max_buying_price) * float(avg_bucket_size) * abs(float(gap_value))
+                    return round(budget, 2)
+                except (ValueError, TypeError):
+                    return 0.0
+
+            result_df['Budget'] = result_df.apply(calculate_budget, axis=1)
+        else:
+            logger.warning("Required columns for Budget calculation not found, setting Budget to 0")
+            result_df['Budget'] = 0.0
+
+        # Reorder columns to place new columns logically
+        # Desired order: Month, Year, Shape, Color, Bucket, Average Bucket Size,
+        #                Max Qty, Min Qty, Stock in Hand, GAP Value, Status, Budget,
+        #                Min Selling Price, Max Buying Price
+
+        desired_order = [
+            'Month', 'Year', 'Shape', 'Color', 'Bucket', 'Average Bucket Size',
+            'Max Qty', 'Min Qty', 'Stock in Hand', 'GAP Value', 'Status', 'Budget',
+            'Min Selling Price', 'Max Buying Price'
+        ]
+
+        # Only reorder columns that exist
+        existing_columns = [col for col in desired_order if col in result_df.columns]
+        other_columns = [col for col in result_df.columns if col not in desired_order]
+
+        final_column_order = existing_columns + other_columns
+        result_df = result_df[final_column_order]
+
+        logger.info(f"Added calculated columns: Average Bucket Size and Budget to GAP summary ({len(result_df)} rows)")
+
+        return result_df
+
+    except Exception as e:
+        logger.error(f"Error adding calculated columns to GAP summary: {e}")
+        # Return original dataframe if calculation fails
+        return gap_df
 
 def generate_previous_months(current_month: str, current_year: int, lookback_count: int) -> List[Tuple[str, int]]:
     """Generate list of (month_name, year) tuples going backwards chronologically."""
