@@ -3012,9 +3012,56 @@ def create_stable_filter_hash(month, year, shape, color, bucket):
     filter_string = f"{month}_{year}_{shape}_{color}_{bucket}"
     return hashlib.md5(filter_string.encode()).hexdigest()
 
-@st.cache_data(show_spinner=False)
-def get_gap_summary_stable(df_hash: str, filter_hash: str):
-    """Stable cached GAP summary calculation"""
+def has_none_filter(month, year, shape, color, bucket):
+    """
+    Check if at least one filter is set to "None"
+
+    Args:
+        month, year, shape, color, bucket: Filter values
+
+    Returns:
+        bool: True if any filter is "None", False if all are specific
+    """
+    return (month == "None" or year == "None" or shape == "None" or
+            color == "None" or bucket == "None")
+
+def get_actual_combinations(master_df, selected_month, selected_year,
+                           selected_shape, selected_color, selected_bucket):
+    """
+    Extract only combinations that actually exist in master_df
+
+    This prevents generating "phantom combinations" that never existed in the data.
+    When filters are "None", we only return combinations with actual data.
+
+    Args:
+        master_df: Master dataframe
+        selected_month, selected_year, selected_shape, selected_color, selected_bucket: Filter values
+
+    Returns:
+        DataFrame with columns: Month, Year, Shape key, Color Key, Buckets
+    """
+    # Get all unique combinations that exist in master_df
+    actual_combinations = master_df.groupby(
+        ['Month', 'Year', 'Shape key', 'Color Key', 'Buckets']
+    ).size().reset_index(name='record_count')
+
+    # Apply specific filters if provided
+    if selected_month != "None":
+        actual_combinations = actual_combinations[actual_combinations['Month'] == selected_month]
+    if selected_year != "None":
+        actual_combinations = actual_combinations[actual_combinations['Year'] == selected_year]
+    if selected_shape != "None":
+        actual_combinations = actual_combinations[actual_combinations['Shape key'] == selected_shape]
+    if selected_color != "None":
+        actual_combinations = actual_combinations[actual_combinations['Color Key'] == selected_color]
+    if selected_bucket != "None":
+        actual_combinations = actual_combinations[actual_combinations['Buckets'] == selected_bucket]
+
+    return actual_combinations
+
+@st.cache_data(show_spinner=False, hash_funcs={"builtins.module": lambda _: None})
+def get_gap_summary_stable(df_hash: str, filter_hash: str, cache_version: str = "v4_preprocess_backfill"):
+    """Stable cached GAP summary calculation using pre-backfilled master data"""
     try:
         # Parse filter parameters from hash
         filter_params = st.session_state.get('gap_filter_params', {})
@@ -3041,62 +3088,122 @@ def get_gap_summary_stable(df_hash: str, filter_hash: str):
         
         # Load qty dictionaries once
         max_qty_dict, min_qty_dict, max_buy_dict = load_qty_dictionaries()
-        
-        # Process combinations efficiently
-        for month in months:
-            for year in years:
-                for shape in shapes:
-                    for color in colors:
-                        for bucket in buckets:
-                            # Single filter operation
-                            mask = (
-                                (master_df['Month'] == month) & 
-                                (master_df['Year'] == year) & 
-                                (master_df['Shape key'] == shape) & 
-                                (master_df['Color Key'] == color) & 
-                                (master_df['Buckets'] == bucket)
-                            )
-                            filtered_data = master_df[mask]
-                            
-                            if not filtered_data.empty:
-                                # Vectorized aggregations
-                                max_qty = int(filtered_data['Max Qty'].max())
-                                min_qty = int(filtered_data['Min Qty'].min())
-                                stock_in_hand = len(filtered_data)
-                                gap_value = gap_analysis(max_qty, min_qty, stock_in_hand)
-                                # min_selling_price calculation removed - not needed in GAP report
-                                max_buying_price = int(filtered_data['Max Buying Price'].max())
-                            else:
-                                # Use cached dictionaries
-                                filter_shape_color = f"{shape}_{color}"
-                                max_qty = max_qty_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
-                                min_qty = min_qty_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
-                                max_buying_price = max_buy_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
-                                gap_value = gap_analysis(max_qty, min_qty, 0)
-                                # min_selling_price calculation removed - not needed in GAP report
-                                stock_in_hand = 0
-                            
-                            gap_summary.append({
-                                'Month': month,
-                                'Year': year,
-                                'Shape': shape,
-                                'Color': color,
-                                'Bucket': bucket,
-                                'Max Qty': max_qty,
-                                'Min Qty': min_qty,
-                                'Stock in Hand': stock_in_hand,
-                                'GAP Value': int(gap_value),
-                                'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate',
-                                'Max Buying Price': max_buying_price
-                            })
+
+        # NEW LOGIC: Check if any filter is "None"
+        if has_none_filter(selected_month, selected_year, selected_shape, selected_color, selected_bucket):
+            # At least one filter is "None" - only process combinations with actual data
+            logger.info("Generating GAP summary for actual combinations only (None filter detected)")
+
+            # Get all unique combinations that exist in master_df
+            actual_combinations = get_actual_combinations(
+                master_df, selected_month, selected_year, selected_shape,
+                selected_color, selected_bucket
+            )
+
+            logger.info(f"Processing {len(actual_combinations)} actual combinations")
+
+            # Iterate over actual combinations only
+            for _, combo_row in actual_combinations.iterrows():
+                month = combo_row['Month']
+                year = combo_row['Year']
+                shape = combo_row['Shape key']
+                color = combo_row['Color Key']
+                bucket = combo_row['Buckets']
+
+                # Filter master_df for this combination
+                mask = (
+                    (master_df['Month'] == month) &
+                    (master_df['Year'] == year) &
+                    (master_df['Shape key'] == shape) &
+                    (master_df['Color Key'] == color) &
+                    (master_df['Buckets'] == bucket)
+                )
+                filtered_data = master_df[mask]
+
+                # This combination EXISTS, so filtered_data will NOT be empty
+                # Process with Path A logic
+                max_qty = int(filtered_data['Max Qty'].max())
+                min_qty = int(filtered_data['Min Qty'].min())
+                stock_in_hand = len(filtered_data)
+                gap_value = gap_analysis(max_qty, min_qty, stock_in_hand)
+                # Use Max Buying Price as-is (already backfilled at load time)
+                max_buying_price = int(filtered_data['Max Buying Price'].max())
+
+                gap_summary.append({
+                    'Month': month,
+                    'Year': year,
+                    'Shape': shape,
+                    'Color': color,
+                    'Bucket': bucket,
+                    'Max Qty': max_qty,
+                    'Min Qty': min_qty,
+                    'Stock in Hand': stock_in_hand,
+                    'GAP Value': int(gap_value),
+                    'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate',
+                    'Max Buying Price': max_buying_price
+                })
+
+        else:
+            # ALL filters are specified - use exact lookup (original logic with Path B fallback)
+            logger.info("All filters specified - using exact lookup with dictionary fallback")
+
+            month = selected_month
+            year = selected_year
+            shape = selected_shape
+            color = selected_color
+            bucket = selected_bucket
+
+            # Single filter operation
+            mask = (
+                (master_df['Month'] == month) &
+                (master_df['Year'] == year) &
+                (master_df['Shape key'] == shape) &
+                (master_df['Color Key'] == color) &
+                (master_df['Buckets'] == bucket)
+            )
+            filtered_data = master_df[mask]
+
+            if not filtered_data.empty:
+                # Path A: Data exists
+                max_qty = int(filtered_data['Max Qty'].max())
+                min_qty = int(filtered_data['Min Qty'].min())
+                stock_in_hand = len(filtered_data)
+                gap_value = gap_analysis(max_qty, min_qty, stock_in_hand)
+                # Use Max Buying Price as-is (already backfilled at load time)
+                max_buying_price = int(filtered_data['Max Buying Price'].max())
+            else:
+                # Path B: Use cached dictionaries
+                filter_shape_color = f"{shape}_{color}"
+                max_qty = max_qty_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
+                min_qty = min_qty_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
+                # Use Max Buying Price as-is from cache (already backfilled at load time)
+                max_buying_price = max_buy_dict.get(filter_shape_color, {}).get(f"{month}-{int(year)-2000}", {}).get(bucket, 0)
+
+                gap_value = gap_analysis(max_qty, min_qty, 0)
+                stock_in_hand = 0
+
+            gap_summary.append({
+                'Month': month,
+                'Year': year,
+                'Shape': shape,
+                'Color': color,
+                'Bucket': bucket,
+                'Max Qty': max_qty,
+                'Min Qty': min_qty,
+                'Stock in Hand': stock_in_hand,
+                'GAP Value': int(gap_value),
+                'Status': 'Excess' if gap_value > 0 else 'Need' if gap_value < 0 else 'Adequate',
+                'Max Buying Price': max_buying_price
+            })
         
         if gap_summary:
             result_df = pd.DataFrame(gap_summary)
 
             # Filter out invalid rows where all key metrics are 0
             # This indicates data quality issues (unmapped colors, missing data)
+            # Handles Color as: integer 0, empty string '', or string '0'
             valid_rows_mask = ~(
-                (result_df['Color'] == 0) &
+                (result_df['Color'].isin([0, '', '0'])) &
                 (result_df['Max Qty'] == 0) &
                 (result_df['Min Qty'] == 0) &
                 (result_df['Stock in Hand'] == 0) &
@@ -3108,7 +3215,7 @@ def get_gap_summary_stable(df_hash: str, filter_hash: str):
             # Log filtering results
             removed_count = len(gap_summary) - len(result_df)
             if removed_count > 0:
-                logger.info(f"GAP Summary: Filtered out {removed_count} invalid rows (Color=0, all metrics=0)")
+                logger.info(f"GAP Summary: Filtered out {removed_count} invalid rows (Color=0/''/'0', all metrics=0)")
 
             # Add calculated columns: Average Bucket Size and Budget
             result_df = add_gap_summary_calculated_columns(result_df)
@@ -3138,8 +3245,8 @@ def get_gap_summary_table(master_df, selected_month, selected_year, selected_sha
     # Create stable hashes
     df_hash = hashlib.md5(pd.util.hash_pandas_object(master_df).values.tobytes()).hexdigest()
     filter_hash = create_stable_filter_hash(selected_month, selected_year, selected_shape, selected_color, selected_bucket)
-    
-    return get_gap_summary_stable(df_hash, filter_hash)
+
+    return get_gap_summary_stable(df_hash, filter_hash, cache_version="v3_real_combos")
 
 def create_gap_table_html(gap_summary_df):
     """Create styled GAP table as HTML to avoid pickle issues"""
@@ -3270,8 +3377,9 @@ def get_missing_products_analysis_cached(df_csv: str, month: str, year: int, sha
         if not missing_df.empty:
             # Filter out invalid rows where all key metrics are 0
             # This indicates data quality issues (unmapped colors, missing data)
+            # Handles Color as: integer 0, empty string '', or string '0'
             valid_rows_mask = ~(
-                (missing_df['Color'] == 0) &
+                (missing_df['Color'].isin([0, '', '0'])) &
                 (missing_df['Last Max Qty'] == 0) &
                 (missing_df['Last Min Qty'] == 0) &
                 (missing_df['Last Weight'] == 0) &
@@ -3285,7 +3393,7 @@ def get_missing_products_analysis_cached(df_csv: str, month: str, year: int, sha
             # Log filtering results
             removed_count = original_count - len(missing_df)
             if removed_count > 0:
-                logger.info(f"Missing Products: Filtered out {removed_count} invalid rows (Color=0, all metrics=0)")
+                logger.info(f"Missing Products: Filtered out {removed_count} invalid rows (Color=0/''/'0', all metrics=0)")
 
             # Sort by months missing (descending) to show longest missing first
             missing_df = missing_df.sort_values('Months Missing', ascending=False)
@@ -4186,6 +4294,188 @@ def gap_analysis(max_qty, min_qty, stock_in_hand):
     except:
         return 0
 
+def get_historical_max_buying_price(master_df, shape, color, bucket, current_month, current_year):
+    """
+    Look backwards through historical data to find most recent non-zero Max Buying Price
+    for the same Shape, Color, and Bucket combination.
+
+    This function is used when a specific month/year has Max Buying Price = 0,
+    allowing us to backfill with the most recent historical price.
+
+    Args:
+        master_df (pd.DataFrame): Complete master dataset with all historical data
+        shape (str): Shape filter (e.g., 'Cushion', 'Oval')
+        color (str): Color filter (e.g., 'FIY', 'FVY')
+        bucket (str): Bucket filter (e.g., '0.50-0.69', '1.00-1.25')
+        current_month (str): Current month to exclude from lookup (e.g., 'September')
+        current_year (int): Current year to exclude from lookup (e.g., 2026)
+
+    Returns:
+        int: Historical Max Buying Price (most recent non-zero value) or 0 if not found
+
+    Example:
+        >>> get_historical_max_buying_price(df, 'Cushion', 'FIY', '0.50-0.69', 'September', 2026)
+        5000  # Returns price from July 2026 if that was the most recent non-zero price
+    """
+    try:
+        if master_df.empty:
+            return 0
+
+        # Month ordering for date comparison
+        month_order = {
+            'January': 1, 'February': 2, 'March': 3, 'April': 4,
+            'May': 5, 'June': 6, 'July': 7, 'August': 8,
+            'September': 9, 'October': 10, 'November': 11, 'December': 12
+        }
+
+        # Calculate current date value for comparison (YYYYMM format)
+        current_date_value = int(current_year) * 100 + month_order.get(current_month, 0)
+
+        # Filter for exact Shape, Color, and Bucket match
+        filtered_df = master_df[
+            (master_df['Shape key'] == shape) &
+            (master_df['Color Key'] == color) &
+            (master_df['Buckets'] == bucket)
+        ].copy()
+
+        if filtered_df.empty:
+            return 0
+
+        # Add date value column for sorting
+        filtered_df['date_value'] = (
+            filtered_df['Year'].astype(int) * 100 +
+            filtered_df['Month'].map(month_order).fillna(0).astype(int)
+        )
+
+        # Exclude current month/year and future dates
+        historical_df = filtered_df[filtered_df['date_value'] < current_date_value]
+
+        if historical_df.empty:
+            return 0
+
+        # Sort by date descending (most recent first)
+        historical_df = historical_df.sort_values('date_value', ascending=False)
+
+        # Convert Max Buying Price to numeric
+        historical_df['Max Buying Price Numeric'] = pd.to_numeric(
+            historical_df['Max Buying Price'],
+            errors='coerce'
+        ).fillna(0)
+
+        # Group by Month/Year and get max Max Buying Price for each period
+        grouped = historical_df.groupby(['Month', 'Year', 'date_value']).agg({
+            'Max Buying Price Numeric': 'max'
+        }).reset_index()
+
+        # Sort by date descending (most recent first)
+        grouped = grouped.sort_values('date_value', ascending=False)
+
+        # Find the first non-zero value (most recent month with non-zero price)
+        for _, row in grouped.iterrows():
+            max_buying_price = row['Max Buying Price Numeric']
+
+            # Return the first non-zero price found (most recent)
+            if max_buying_price > 0:
+                logger.info(
+                    f"Backfilled Max Buying Price: {int(max_buying_price)} "
+                    f"from {row['Month']} {int(row['Year'])} "
+                    f"for {shape}/{color}/{bucket} (current: {current_month} {current_year})"
+                )
+                return int(max_buying_price)
+
+        # No non-zero historical price found
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error in historical Max Buying Price lookup: {e}")
+        return 0
+
+def backfill_master_data_max_buying_price(master_df):
+    """
+    Pre-process master_df to backfill Max Buying Price where it's 0
+
+    This function runs ONCE when master_df is loaded, not during filtering.
+    For each row with Max Buying Price = 0:
+    - Looks backwards through historical data
+    - Finds the same Shape/Color/Bucket combination in previous months
+    - Updates that row's Max Buying Price with the historical value
+
+    This improves performance by doing backfill upfront instead of on every GAP Summary call.
+
+    Args:
+        master_df (pd.DataFrame): Master dataframe with all data
+
+    Returns:
+        pd.DataFrame: Master dataframe with Max Buying Price backfilled for zero-price rows
+
+    Example:
+        >>> master_df = load_cached_master_dataset()
+        >>> master_df_backfilled = backfill_master_data_max_buying_price(master_df)
+        >>> # All rows with historical data now have Max Buying Price > 0
+    """
+    if master_df is None or master_df.empty:
+        logger.info("Backfill: Empty master_df, skipping backfill")
+        return master_df
+
+    try:
+        # Create a copy to avoid modifying original
+        df = master_df.copy()
+
+        # Find rows where Max Buying Price = 0
+        zero_price_mask = df['Max Buying Price'] == 0
+        zero_price_rows = df[zero_price_mask]
+
+        total_zeros = len(zero_price_rows)
+        logger.info(f"Backfill: Found {total_zeros} rows with Max Buying Price = 0")
+
+        if total_zeros == 0:
+            logger.info("Backfill: No rows need backfilling")
+            return df
+
+        backfill_count = 0
+        backfill_failed_count = 0
+
+        # Iterate over rows with zero price
+        for idx, row in zero_price_rows.iterrows():
+            shape = row['Shape key']
+            color = row['Color Key']
+            bucket = row['Buckets']
+            month = row['Month']
+            year = row['Year']
+
+            # Get historical price using existing function
+            historical_price = get_historical_max_buying_price(
+                df, shape, color, bucket, month, year
+            )
+
+            if historical_price > 0:
+                # Update the row with historical price
+                df.loc[idx, 'Max Buying Price'] = historical_price
+                backfill_count += 1
+                logger.debug(
+                    f"Backfill: {shape}/{color}/{bucket} ({month} {year}) "
+                    f"updated from 0 to ${historical_price}"
+                )
+            else:
+                backfill_failed_count += 1
+                logger.debug(
+                    f"Backfill: No historical data for {shape}/{color}/{bucket} "
+                    f"({month} {year}), remains at 0"
+                )
+
+        # Log final statistics
+        logger.info(
+            f"Backfill complete: {backfill_count} rows backfilled, "
+            f"{backfill_failed_count} remain at 0 (no historical data)"
+        )
+
+        return df
+
+    except Exception as e:
+        logger.error(f"Error during master data backfill: {e}")
+        # Return original dataframe on error
+        return master_df
+
 def filter_invalid_data_rows(df, filter_config):
     """
     Filter out invalid rows where all specified columns equal their check values.
@@ -4970,7 +5260,11 @@ def main():
                 try:
                     master_df = load_cached_master_dataset()
                     if not master_df.empty:
-                        st.session_state.master_df = apply_data_filters(master_df)
+                        # Apply data filters first
+                        master_df_filtered = apply_data_filters(master_df)
+                        # Then backfill Max Buying Price ONCE at load time
+                        master_df_backfilled = backfill_master_data_max_buying_price(master_df_filtered)
+                        st.session_state.master_df = master_df_backfilled
                         st.success("Master database loaded successfully!")
                         logger.info("Master database loaded successfully")
                     else:
@@ -5149,8 +5443,11 @@ def process_uploaded_file(uploaded_file):
             
             # Single groupby and filter operation
             st.session_state.master_df = optimize_dataframe_groupby(combined_df)
+            # Apply data filters
             st.session_state.master_df = apply_data_filters(st.session_state.master_df)
-            
+            # Backfill Max Buying Price ONCE at data processing time
+            st.session_state.master_df = backfill_master_data_max_buying_price(st.session_state.master_df)
+
             # Save data
             optimized_save_data(st.session_state.master_df)
             
